@@ -11,10 +11,12 @@
     <section class="game-card">
       <header class="game-header">
         <div>
+          <p class="eyebrow">BULLET DODGE</p>
           <h1>탄막 피하기</h1>
-          <p>마우스로 플레이어를 움직여 탄막을 피하세요.</p>
+          <p class="description">마우스로 플레이어를 움직여 탄막을 피하세요. 45초 동안 생존하면 승리합니다.</p>
         </div>
-        <div class="hud">
+
+        <div class="hud" aria-label="게임 정보">
           <div class="hud-item">
             <span>TIME</span>
             <strong id="timeText">45.0</strong>
@@ -23,31 +25,35 @@
             <span>SCORE</span>
             <strong id="scoreText">0</strong>
           </div>
+          <div class="hud-item">
+            <span>GRAZE</span>
+            <strong id="grazeText">0</strong>
+          </div>
         </div>
       </header>
 
-      <div class="canvas-box">
-        <canvas id="gameCanvas" width="900" height="540"></canvas>
+      <div class="game-area" id="gameArea">
+        <canvas id="gameCanvas" width="800" height="520" aria-label="탄막 피하기 게임 화면"></canvas>
 
-        <div id="startScreen" class="screen active">
-          <h2>탄막을 피해서 살아남기</h2>
-          <p>
-            핵심 메커닉: 탄막 회피<br />
-            승리 조건: 45초 생존<br />
-            패배 조건: 탄막에 피격
-          </p>
-          <button id="startButton">게임 시작</button>
-        </div>
+        <div class="sound-indicator" id="soundIndicator">SOUND ON</div>
 
-        <div id="endScreen" class="screen">
-          <h2 id="resultTitle">게임 종료</h2>
-          <p id="resultText">결과가 표시됩니다.</p>
-          <button id="restartButton">다시 시작</button>
+        <div class="overlay" id="overlay">
+          <div class="overlay-panel">
+            <p class="panel-kicker" id="panelKicker">READY</p>
+            <h2 id="panelTitle">탄막을 피해 생존하세요</h2>
+            <p id="panelText">게임 시작 버튼을 누르면 사운드가 활성화됩니다. 탄막에 가까이 스치면 Graze 점수를 얻습니다.</p>
+            <div class="button-row">
+              <button type="button" id="startButton">게임 시작</button>
+              <button type="button" class="secondary" id="muteButton">사운드 끄기</button>
+            </div>
+          </div>
         </div>
       </div>
 
       <footer class="game-footer">
-        <p>조작: 마우스 이동 / 모바일: 손가락 드래그</p>
+        <p><strong>조작:</strong> 마우스 이동</p>
+        <p><strong>승리:</strong> 45초 생존</p>
+        <p><strong>패배:</strong> 탄막 피격</p>
       </footer>
     </section>
   </main>
