@@ -2,30 +2,79 @@
   box-sizing: border-box;
 }
 
+html,
 body {
   margin: 0;
+  min-height: 100%;
+}
+
+body {
   min-height: 100vh;
   font-family: Arial, Helvetica, sans-serif;
   color: #f4f7ff;
   background:
-    radial-gradient(circle at 20% 20%, rgba(90, 100, 255, 0.24), transparent 32%),
-    radial-gradient(circle at 80% 10%, rgba(255, 87, 174, 0.18), transparent 30%),
+    radial-gradient(circle at 16% 16%, rgba(93, 114, 255, 0.24), transparent 30%),
+    radial-gradient(circle at 85% 12%, rgba(255, 95, 183, 0.16), transparent 28%),
     linear-gradient(135deg, #070914, #11172a 52%, #060812);
-  display: flex;
-  align-items: center;
-  justify-content: center;
 }
 
-.game-wrap {
+button,
+input {
+  font: inherit;
+}
+
+button {
+  border: 0;
+  border-radius: 999px;
+  padding: 12px 18px;
+  color: #071020;
+  background: linear-gradient(135deg, #73f7ff, #ff6bba);
+  font-weight: 900;
+  cursor: pointer;
+  transition: transform 0.16s ease, filter 0.16s ease;
+}
+
+button:hover:not(:disabled) {
+  transform: translateY(-2px);
+  filter: brightness(1.08);
+}
+
+button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+button.secondary {
+  color: #e9efff;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+}
+
+.ghost-button {
+  padding: 8px 11px;
+  color: #b8c3de;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  font-size: 12px;
+}
+
+h1,
+h2,
+h3,
+p {
+  margin: 0;
+}
+
+.page-wrap {
   width: 100%;
   padding: 24px;
 }
 
 .game-card {
-  width: min(980px, 100%);
+  width: min(1160px, 100%);
   margin: 0 auto;
   padding: 22px;
-  border: 1px solid rgba(255, 255, 255, 0.16);
+  border: 1px solid rgba(255, 255, 255, 0.15);
   border-radius: 24px;
   background: rgba(8, 12, 28, 0.76);
   box-shadow: 0 24px 80px rgba(0, 0, 0, 0.45);
@@ -34,28 +83,14 @@ body {
 
 .game-header {
   display: flex;
-  justify-content: space-between;
-  gap: 16px;
   align-items: center;
+  justify-content: space-between;
+  gap: 18px;
   margin-bottom: 16px;
 }
 
-h1,
-h2,
-p {
-  margin: 0;
-}
-
-h1 {
-  font-size: 28px;
-  letter-spacing: -0.04em;
-}
-
-.description,
-.game-footer p {
-  margin-top: 6px;
-  color: #aeb9d6;
-  font-size: 14px;
+.title-group {
+  min-width: 0;
 }
 
 .eyebrow,
@@ -63,13 +98,28 @@ h1 {
   margin-bottom: 6px;
   color: #73f7ff;
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 900;
   letter-spacing: 0.16em;
+}
+
+h1 {
+  font-size: 30px;
+  letter-spacing: -0.05em;
+}
+
+.description,
+.game-footer p,
+.ranking-note {
+  margin-top: 6px;
+  color: #aeb9d6;
+  font-size: 14px;
+  line-height: 1.45;
 }
 
 .hud {
   display: flex;
   gap: 10px;
+  flex-shrink: 0;
 }
 
 .hud-item {
@@ -83,8 +133,8 @@ h1 {
 
 .hud-item span {
   display: block;
-  font-size: 11px;
   color: #9da9c9;
+  font-size: 11px;
   letter-spacing: 0.08em;
 }
 
@@ -94,19 +144,34 @@ h1 {
   font-size: 24px;
 }
 
+.content-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: 16px;
+  align-items: start;
+}
+
+.play-panel,
+.ranking-panel {
+  min-width: 0;
+}
+
 .game-area {
   position: relative;
   overflow: hidden;
   border-radius: 18px;
   border: 1px solid rgba(143, 167, 255, 0.25);
   background: #050712;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.03);
 }
 
 canvas {
   display: block;
   width: 100%;
   height: auto;
+  min-height: 320px;
   cursor: none;
+  background: #050712;
 }
 
 .sound-indicator {
@@ -116,12 +181,13 @@ canvas {
   z-index: 2;
   padding: 7px 11px;
   border-radius: 999px;
-  background: rgba(0, 0, 0, 0.48);
+  background: rgba(0, 0, 0, 0.5);
   border: 1px solid rgba(255, 255, 255, 0.16);
   color: #dce7ff;
   font-size: 11px;
-  font-weight: 700;
+  font-weight: 900;
   letter-spacing: 0.08em;
+  pointer-events: none;
 }
 
 .overlay {
@@ -141,17 +207,17 @@ canvas {
 }
 
 .overlay-panel {
-  width: min(440px, 100%);
+  width: min(460px, 100%);
   padding: 28px;
   border-radius: 22px;
-  background: rgba(11, 17, 39, 0.92);
+  background: rgba(11, 17, 39, 0.94);
   border: 1px solid rgba(255, 255, 255, 0.15);
   box-shadow: 0 22px 60px rgba(0, 0, 0, 0.38);
 }
 
 .overlay-panel h2 {
   font-size: 30px;
-  letter-spacing: -0.04em;
+  letter-spacing: -0.05em;
 }
 
 .overlay-panel p:not(.panel-kicker) {
@@ -168,26 +234,53 @@ canvas {
   flex-wrap: wrap;
 }
 
-button {
-  border: 0;
+.hidden {
+  display: none !important;
+}
+
+.rank-form {
+  margin-top: 18px;
+  padding: 15px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(115, 247, 255, 0.22);
+}
+
+.rank-form label {
+  display: block;
+  color: #eaf2ff;
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.rank-input-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.rank-input-row input {
+  min-width: 0;
+  flex: 1;
+  padding: 12px 14px;
   border-radius: 999px;
-  padding: 12px 18px;
-  color: #071020;
-  background: linear-gradient(135deg, #73f7ff, #ff6bba);
-  font-weight: 800;
-  cursor: pointer;
-  transition: transform 0.16s ease, filter 0.16s ease;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(0, 0, 0, 0.28);
+  color: #ffffff;
+  outline: none;
 }
 
-button:hover {
-  transform: translateY(-2px);
-  filter: brightness(1.08);
+.rank-input-row input:focus {
+  border-color: rgba(115, 247, 255, 0.78);
+  box-shadow: 0 0 0 3px rgba(115, 247, 255, 0.12);
 }
 
-button.secondary {
-  color: #e9efff;
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.16);
+.rank-input-row input::placeholder {
+  color: #7f8bad;
+}
+
+.rank-help {
+  font-size: 12px;
 }
 
 .game-footer {
@@ -197,12 +290,128 @@ button.secondary {
   margin-top: 14px;
 }
 
-@media (max-width: 760px) {
-  body {
-    align-items: flex-start;
+.ranking-panel {
+  padding: 18px;
+  border-radius: 18px;
+  background: rgba(0, 0, 0, 0.23);
+  border: 1px solid rgba(255, 255, 255, 0.11);
+}
+
+.ranking-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.ranking-header h2 {
+  font-size: 24px;
+  letter-spacing: -0.04em;
+}
+
+.ranking-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ranking-empty {
+  padding: 14px;
+  border-radius: 14px;
+  color: #9da9c9;
+  background: rgba(255, 255, 255, 0.05);
+  font-size: 13px;
+  text-align: center;
+}
+
+.ranking-item {
+  display: grid;
+  grid-template-columns: 30px 1fr;
+  gap: 10px;
+  padding: 10px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.ranking-rank {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  color: #071020;
+  background: linear-gradient(135deg, #73f7ff, #ff6bba);
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.ranking-name-row,
+.ranking-score-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.ranking-name {
+  overflow: hidden;
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.result-badge {
+  flex-shrink: 0;
+  padding: 3px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.result-badge.win {
+  color: #071020;
+  background: #73f7ff;
+}
+
+.result-badge.lose {
+  color: #ffffff;
+  background: rgba(255, 107, 186, 0.82);
+}
+
+.ranking-score-row {
+  margin-top: 5px;
+}
+
+.ranking-meta {
+  color: #9da9c9;
+  font-size: 12px;
+}
+
+.ranking-score {
+  color: #ffd166;
+  font-size: 14px;
+  font-weight: 900;
+}
+
+@media (max-width: 980px) {
+  .content-grid {
+    grid-template-columns: 1fr;
   }
 
-  .game-wrap {
+  .ranking-panel {
+    order: 2;
+  }
+}
+
+@media (max-width: 760px) {
+  .page-wrap {
     padding: 14px;
   }
 
@@ -230,7 +439,19 @@ button.secondary {
     font-size: 20px;
   }
 
+  .overlay {
+    padding: 14px;
+  }
+
+  .overlay-panel {
+    padding: 20px;
+  }
+
   .overlay-panel h2 {
     font-size: 24px;
+  }
+
+  .rank-input-row {
+    flex-direction: column;
   }
 }

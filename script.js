@@ -11,39 +11,52 @@ const panelText = document.getElementById('panelText');
 const startButton = document.getElementById('startButton');
 const muteButton = document.getElementById('muteButton');
 const soundIndicator = document.getElementById('soundIndicator');
+const rankForm = document.getElementById('rankForm');
+const nicknameInput = document.getElementById('nicknameInput');
+const saveRankButton = document.getElementById('saveRankButton');
+const rankHelp = document.getElementById('rankHelp');
+const rankingList = document.getElementById('rankingList');
+const clearRankingButton = document.getElementById('clearRankingButton');
 
 const GAME_TIME = 45;
 const GRAZE_DISTANCE = 24;
+const RANKING_STORAGE_KEY = 'bulletDodgeRankingV2';
+const MAX_RANKING_COUNT = 10;
 
 let gameState = 'ready';
-let player;
-let bullets;
-let particles;
-let stars;
-let elapsedTime;
-let score;
-let grazeCount;
-let lastTime;
-let patternTimer;
-let aimedTimer;
-let difficultyTimer;
-let difficulty;
-let animationId;
+let player = null;
+let bullets = [];
+let particles = [];
+let stars = [];
+let elapsedTime = 0;
+let score = 0;
+let grazeCount = 0;
+let lastTime = 0;
+let patternTimer = 0;
+let aimedTimer = 0;
+let difficultyTimer = 0;
+let difficulty = 1;
+let animationId = null;
 let lastShotSoundTime = 0;
 let lastGrazeSoundTime = 0;
+let pendingRankLog = null;
+let hasSavedCurrentLog = false;
 
-let audioContext;
-let masterGain;
-let bgmGain;
-let bgmOscillator;
-let bgmLfo;
-let bgmLfoGain;
+let audioContext = null;
+let masterGain = null;
+let bgmGain = null;
+let bgmOscillator = null;
+let bgmLfo = null;
+let bgmLfoGain = null;
 let isMuted = false;
 
 function initAudio() {
   if (audioContext) return;
 
-  audioContext = new (window.AudioContext || window.webkitAudioContext)();
+  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContextClass) return;
+
+  audioContext = new AudioContextClass();
   masterGain = audioContext.createGain();
   masterGain.gain.value = isMuted ? 0 : 0.42;
   masterGain.connect(audioContext.destination);
@@ -52,59 +65,59 @@ function initAudio() {
 function resumeAudio() {
   initAudio();
 
-  if (audioContext.state === 'suspended') {
+  if (audioContext && audioContext.state === 'suspended') {
     audioContext.resume();
   }
 }
 
-function setMasterVolume(value, startTime = audioContext.currentTime, duration = 0.04) {
-  if (!masterGain) return;
+function setMasterVolume(value, duration = 0.04) {
+  if (!audioContext || !masterGain) return;
 
-  masterGain.gain.cancelScheduledValues(startTime);
-  masterGain.gain.setValueAtTime(masterGain.gain.value, startTime);
-  masterGain.gain.linearRampToValueAtTime(isMuted ? 0 : value, startTime + duration);
+  const now = audioContext.currentTime;
+  masterGain.gain.cancelScheduledValues(now);
+  masterGain.gain.setValueAtTime(masterGain.gain.value, now);
+  masterGain.gain.linearRampToValueAtTime(isMuted ? 0 : value, now + duration);
 }
 
 function updateSoundUI() {
   soundIndicator.textContent = isMuted ? 'SOUND OFF' : 'SOUND ON';
   muteButton.textContent = isMuted ? '사운드 켜기' : '사운드 끄기';
 
-  if (masterGain && audioContext) {
-    setMasterVolume(0.42, audioContext.currentTime, 0.08);
+  if (audioContext && masterGain) {
+    setMasterVolume(0.42, 0.08);
   }
 }
 
 function createTone({ frequency, type = 'sine', start = 0, duration = 0.18, volume = 0.2, destination = masterGain }) {
-  if (!audioContext || isMuted) return;
+  if (!audioContext || !destination || isMuted) return;
 
-  const now = audioContext.currentTime;
-  const startTime = now + start;
+  const startTime = audioContext.currentTime + start;
   const oscillator = audioContext.createOscillator();
   const gain = audioContext.createGain();
 
   oscillator.type = type;
   oscillator.frequency.setValueAtTime(frequency, startTime);
 
-  gain.gain.setValueAtTime(0, startTime);
+  gain.gain.setValueAtTime(0.001, startTime);
   gain.gain.linearRampToValueAtTime(volume, startTime + 0.015);
   gain.gain.exponentialRampToValueAtTime(0.001, startTime + duration);
 
   oscillator.connect(gain);
   gain.connect(destination);
   oscillator.start(startTime);
-  oscillator.stop(startTime + duration + 0.02);
+  oscillator.stop(startTime + duration + 0.03);
 }
 
-function createNoise({ start = 0, duration = 0.2, volume = 0.22, filterFrequency = 900 }) {
-  if (!audioContext || isMuted) return;
+function createNoise({ start = 0, duration = 0.22, volume = 0.22, filterFrequency = 900 }) {
+  if (!audioContext || !masterGain || isMuted) return;
 
-  const now = audioContext.currentTime;
-  const startTime = now + start;
+  const startTime = audioContext.currentTime + start;
   const sampleRate = audioContext.sampleRate;
-  const buffer = audioContext.createBuffer(1, sampleRate * duration, sampleRate);
+  const frameCount = Math.max(1, Math.floor(sampleRate * duration));
+  const buffer = audioContext.createBuffer(1, frameCount, sampleRate);
   const data = buffer.getChannelData(0);
 
-  for (let i = 0; i < data.length; i++) {
+  for (let i = 0; i < frameCount; i += 1) {
     data[i] = Math.random() * 2 - 1;
   }
 
@@ -151,16 +164,9 @@ function playGrazeSound() {
   createTone({ frequency: 1180 + Math.random() * 240, type: 'sine', duration: 0.07, volume: 0.055 });
 }
 
-function playExplosionSound() {
-  createNoise({ duration: 0.34, volume: 0.28, filterFrequency: 720 });
-  createTone({ frequency: 95, type: 'sawtooth', duration: 0.32, volume: 0.22 });
-  createTone({ frequency: 55, type: 'sine', start: 0.04, duration: 0.42, volume: 0.2 });
-}
-
 function playVictoryEndingSound() {
-  // 승리 전용 효과음: 밝게 올라가는 팡파르 + 반짝이는 차임
   stopBgm();
-  setMasterVolume(0.5, audioContext.currentTime, 0.04);
+  setMasterVolume(0.5, 0.04);
 
   const notes = [523.25, 659.25, 783.99, 1046.5];
   notes.forEach((note, index) => {
@@ -168,20 +174,19 @@ function playVictoryEndingSound() {
       frequency: note,
       type: 'triangle',
       start: index * 0.12,
-      duration: 0.26,
+      duration: 0.28,
       volume: 0.18,
     });
   });
 
-  createTone({ frequency: 1318.51, type: 'sine', start: 0.5, duration: 0.45, volume: 0.16 });
-  createTone({ frequency: 1567.98, type: 'sine', start: 0.58, duration: 0.38, volume: 0.12 });
-  createTone({ frequency: 2093, type: 'sine', start: 0.7, duration: 0.28, volume: 0.08 });
+  createTone({ frequency: 1318.51, type: 'sine', start: 0.52, duration: 0.42, volume: 0.15 });
+  createTone({ frequency: 1567.98, type: 'sine', start: 0.62, duration: 0.34, volume: 0.12 });
+  createTone({ frequency: 2093, type: 'sine', start: 0.74, duration: 0.28, volume: 0.08 });
 }
 
 function playDefeatEndingSound() {
-  // 패배 전용 효과음: 낮게 내려가는 게임오버 사운드 + 충돌 노이즈
   stopBgm();
-  setMasterVolume(0.5, audioContext.currentTime, 0.04);
+  setMasterVolume(0.5, 0.04);
 
   createNoise({ duration: 0.28, volume: 0.24, filterFrequency: 520 });
 
@@ -200,7 +205,7 @@ function playDefeatEndingSound() {
 }
 
 function startBgm() {
-  if (!audioContext || isMuted || bgmOscillator) return;
+  if (!audioContext || !masterGain || isMuted || bgmOscillator) return;
 
   bgmGain = audioContext.createGain();
   bgmGain.gain.value = 0.025;
@@ -249,6 +254,156 @@ function stopBgm() {
   }
 }
 
+function getRankings() {
+  try {
+    const saved = localStorage.getItem(RANKING_STORAGE_KEY);
+    const rankings = saved ? JSON.parse(saved) : [];
+    return Array.isArray(rankings) ? rankings : [];
+  } catch (error) {
+    console.warn('랭킹 데이터를 불러오지 못했습니다.', error);
+    return [];
+  }
+}
+
+function saveRankings(rankings) {
+  try {
+    localStorage.setItem(RANKING_STORAGE_KEY, JSON.stringify(rankings));
+  } catch (error) {
+    console.warn('랭킹 데이터를 저장하지 못했습니다.', error);
+  }
+}
+
+function sortAndLimitRankings(rankings) {
+  return rankings
+    .sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      if (b.survivalTime !== a.survivalTime) return b.survivalTime - a.survivalTime;
+      if (b.grazeCount !== a.grazeCount) return b.grazeCount - a.grazeCount;
+      return b.createdAt - a.createdAt;
+    })
+    .slice(0, MAX_RANKING_COUNT);
+}
+
+function escapeHtml(text) {
+  return String(text)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+function formatDate(timestamp) {
+  return new Intl.DateTimeFormat('ko-KR', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(new Date(timestamp));
+}
+
+function renderRankingList() {
+  const rankings = sortAndLimitRankings(getRankings());
+  rankingList.innerHTML = '';
+
+  if (rankings.length === 0) {
+    rankingList.innerHTML = '<li class="ranking-empty">아직 저장된 기록이 없습니다.</li>';
+    return;
+  }
+
+  rankings.forEach((ranking, index) => {
+    const listItem = document.createElement('li');
+    const resultClass = ranking.result === 'WIN' ? 'win' : 'lose';
+    const resultText = ranking.result === 'WIN' ? '승리' : '패배';
+    const nickname = escapeHtml(ranking.nickname || 'PLAYER');
+    const safeScore = Number(ranking.score || 0);
+    const safeSurvivalTime = Number(ranking.survivalTime || 0);
+    const safeGrazeCount = Number(ranking.grazeCount || 0);
+
+    listItem.className = 'ranking-item';
+    listItem.innerHTML = `
+      <span class="ranking-rank">${index + 1}</span>
+      <div class="ranking-content">
+        <div class="ranking-name-row">
+          <span class="ranking-name">${nickname}</span>
+          <span class="result-badge ${resultClass}">${resultText}</span>
+        </div>
+        <div class="ranking-score-row">
+          <span class="ranking-meta">${safeSurvivalTime.toFixed(1)}초 · G ${safeGrazeCount}</span>
+          <strong class="ranking-score">${safeScore}점</strong>
+        </div>
+        <div class="ranking-meta">${formatDate(ranking.createdAt || Date.now())}</div>
+      </div>
+    `;
+
+    rankingList.appendChild(listItem);
+  });
+}
+
+function createPendingRankLog(isWin) {
+  return {
+    result: isWin ? 'WIN' : 'LOSE',
+    score,
+    survivalTime: Number(Math.min(elapsedTime, GAME_TIME).toFixed(1)),
+    grazeCount,
+    createdAt: Date.now(),
+  };
+}
+
+function showRankForm() {
+  rankForm.classList.remove('hidden');
+  rankForm.reset();
+  nicknameInput.disabled = false;
+  saveRankButton.disabled = false;
+  rankHelp.textContent = '점수 기준 상위 10개 기록만 저장됩니다.';
+
+  window.setTimeout(() => {
+    nicknameInput.focus();
+  }, 100);
+}
+
+function hideRankForm() {
+  rankForm.classList.add('hidden');
+  rankForm.reset();
+  rankHelp.textContent = '점수 기준 상위 10개 기록만 저장됩니다.';
+}
+
+function saveCurrentRankLog(event) {
+  event.preventDefault();
+
+  if (!pendingRankLog || hasSavedCurrentLog) return;
+
+  const nickname = nicknameInput.value.trim() || 'PLAYER';
+  const newRanking = {
+    ...pendingRankLog,
+    nickname: nickname.slice(0, 12),
+  };
+
+  const rankings = sortAndLimitRankings([...getRankings(), newRanking]);
+  saveRankings(rankings);
+  renderRankingList();
+
+  hasSavedCurrentLog = true;
+  nicknameInput.disabled = true;
+  saveRankButton.disabled = true;
+  rankHelp.textContent = '기록이 저장되었습니다. 다시 플레이하면 새 기록을 남길 수 있습니다.';
+}
+
+function clearRankingLogs() {
+  if (getRankings().length === 0) return;
+
+  const isConfirmed = window.confirm('저장된 랭킹 기록을 모두 삭제할까요?');
+  if (!isConfirmed) return;
+
+  try {
+    localStorage.removeItem(RANKING_STORAGE_KEY);
+  } catch (error) {
+    console.warn('랭킹 데이터를 삭제하지 못했습니다.', error);
+  }
+
+  renderRankingList();
+}
+
 function resetGame() {
   player = {
     x: canvas.width / 2,
@@ -288,12 +443,19 @@ function startGame() {
   playStartSound();
   stopBgm();
   startBgm();
+  hideRankForm();
+  pendingRankLog = null;
+  hasSavedCurrentLog = false;
 
   resetGame();
   gameState = 'playing';
   overlay.classList.remove('active');
   startButton.textContent = '다시 시작';
-  cancelAnimationFrame(animationId);
+
+  if (animationId) {
+    cancelAnimationFrame(animationId);
+  }
+
   animationId = requestAnimationFrame(gameLoop);
 }
 
@@ -301,7 +463,14 @@ function endGame(isWin) {
   if (gameState === 'end') return;
 
   gameState = 'end';
-  cancelAnimationFrame(animationId);
+
+  if (animationId) {
+    cancelAnimationFrame(animationId);
+    animationId = null;
+  }
+
+  pendingRankLog = createPendingRankLog(isWin);
+  hasSavedCurrentLog = false;
 
   if (isWin) {
     playVictoryEndingSound();
@@ -315,14 +484,16 @@ function endGame(isWin) {
     panelText.textContent = `탄막에 피격되었습니다. 생존 시간: ${elapsedTime.toFixed(1)}초 / 점수: ${score} / Graze: ${grazeCount}`;
   }
 
+  showRankForm();
+  renderRankingList();
   overlay.classList.add('active');
 }
 
 function updateHud() {
   const remainTime = Math.max(0, GAME_TIME - elapsedTime);
   timeText.textContent = remainTime.toFixed(1);
-  scoreText.textContent = score;
-  grazeText.textContent = grazeCount;
+  scoreText.textContent = String(score);
+  grazeText.textContent = String(grazeCount);
 }
 
 function getPointerPosition(event) {
@@ -337,20 +508,26 @@ function getPointerPosition(event) {
 }
 
 function movePlayerTo(x, y) {
+  if (!player) return;
+
   player.targetX = Math.max(player.radius, Math.min(canvas.width - player.radius, x));
   player.targetY = Math.max(player.radius, Math.min(canvas.height - player.radius, y));
 }
 
 function handleMouseMove(event) {
   if (gameState !== 'playing') return;
+
   const pos = getPointerPosition(event);
   movePlayerTo(pos.x, pos.y);
 }
 
 function handleTouchMove(event) {
   if (gameState !== 'playing') return;
+
   event.preventDefault();
   const touch = event.touches[0];
+  if (!touch) return;
+
   const pos = getPointerPosition(touch);
   movePlayerTo(pos.x, pos.y);
 }
@@ -376,7 +553,7 @@ function createCirclePattern() {
   const speed = 80 + difficulty * 14;
   const offset = elapsedTime * 0.7;
 
-  for (let i = 0; i < count; i++) {
+  for (let i = 0; i < count; i += 1) {
     const angle = (Math.PI * 2 / count) * i + offset;
     createBullet(
       centerX,
@@ -398,7 +575,7 @@ function createSpiralPattern() {
   const arms = 4;
   const speed = 110 + difficulty * 12;
 
-  for (let i = 0; i < arms; i++) {
+  for (let i = 0; i < arms; i += 1) {
     const angle = elapsedTime * 3 + (Math.PI * 2 / arms) * i;
     createBullet(
       centerX,
@@ -439,9 +616,11 @@ function createWallPattern() {
 }
 
 function createAimedBullet() {
+  if (!player) return;
+
   const side = Math.floor(Math.random() * 4);
-  let x;
-  let y;
+  let x = 0;
+  let y = 0;
 
   if (side === 0) {
     x = Math.random() * canvas.width;
@@ -474,7 +653,7 @@ function createAimedBullet() {
 }
 
 function createHitParticles(x, y) {
-  for (let i = 0; i < 26; i++) {
+  for (let i = 0; i < 26; i += 1) {
     const angle = Math.random() * Math.PI * 2;
     const speed = 80 + Math.random() * 210;
 
@@ -492,7 +671,7 @@ function createHitParticles(x, y) {
 }
 
 function createGrazeParticles(x, y) {
-  for (let i = 0; i < 4; i++) {
+  for (let i = 0; i < 4; i += 1) {
     particles.push({
       x: x + (Math.random() - 0.5) * 18,
       y: y + (Math.random() - 0.5) * 18,
@@ -513,6 +692,9 @@ function updateGame(deltaTime) {
   difficultyTimer += deltaTime;
 
   if (elapsedTime >= GAME_TIME) {
+    elapsedTime = GAME_TIME;
+    score = Math.floor(elapsedTime * 100 + grazeCount * 75);
+    updateHud();
     endGame(true);
     return;
   }
@@ -550,9 +732,12 @@ function updateGame(deltaTime) {
     bullet.rotation += deltaTime * 5;
   });
 
-  bullets = bullets.filter((bullet) => {
-    return bullet.x > -80 && bullet.x < canvas.width + 80 && bullet.y > -80 && bullet.y < canvas.height + 80;
-  });
+  bullets = bullets.filter((bullet) => (
+    bullet.x > -80 &&
+    bullet.x < canvas.width + 80 &&
+    bullet.y > -80 &&
+    bullet.y < canvas.height + 80
+  ));
 
   particles.forEach((particle) => {
     particle.x += particle.vx * deltaTime;
@@ -576,7 +761,7 @@ function updateGame(deltaTime) {
 }
 
 function checkCollisionAndGraze() {
-  if (player.invincibleTime > 0) return;
+  if (!player || player.invincibleTime > 0) return;
 
   for (const bullet of bullets) {
     const distance = Math.hypot(player.x - bullet.x, player.y - bullet.y);
@@ -649,6 +834,8 @@ function drawBullets() {
 }
 
 function drawPlayer() {
+  if (!player) return;
+
   const blink = player.invincibleTime > 0 && Math.floor(player.invincibleTime * 12) % 2 === 0;
   if (blink) return;
 
@@ -694,7 +881,7 @@ function drawParticles() {
 }
 
 function drawWarningText() {
-  if (player.invincibleTime <= 0 || gameState !== 'playing') return;
+  if (!player || player.invincibleTime <= 0 || gameState !== 'playing') return;
 
   ctx.fillStyle = 'rgba(255, 255, 255, 0.72)';
   ctx.font = '18px Arial';
@@ -723,7 +910,9 @@ function gameLoop(timestamp) {
   updateGame(deltaTime);
   drawGame();
 
-  animationId = requestAnimationFrame(gameLoop);
+  if (gameState === 'playing') {
+    animationId = requestAnimationFrame(gameLoop);
+  }
 }
 
 function toggleMute() {
@@ -743,7 +932,10 @@ canvas.addEventListener('mousemove', handleMouseMove);
 canvas.addEventListener('touchmove', handleTouchMove, { passive: false });
 startButton.addEventListener('click', startGame);
 muteButton.addEventListener('click', toggleMute);
+rankForm.addEventListener('submit', saveCurrentRankLog);
+clearRankingButton.addEventListener('click', clearRankingLogs);
 
 resetGame();
 updateSoundUI();
+renderRankingList();
 drawGame();
