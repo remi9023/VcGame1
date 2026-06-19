@@ -1,6 +1,7 @@
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 
+const stageText = document.getElementById('stageText');
 const timeText = document.getElementById('timeText');
 const scoreText = document.getElementById('scoreText');
 const grazeText = document.getElementById('grazeText');
@@ -18,482 +19,196 @@ const rankHelp = document.getElementById('rankHelp');
 const rankingList = document.getElementById('rankingList');
 const clearRankingButton = document.getElementById('clearRankingButton');
 
-const GAME_TIME = 45;
-const GRAZE_DISTANCE = 24;
-const RANKING_STORAGE_KEY = 'bulletDodgeRankingV2';
-const MAX_RANKING_COUNT = 10;
+const STAGES = [
+  {
+    level: 1,
+    name: '1단계',
+    duration: 15,
+    label: '입문 탄막',
+    patternInterval: 1.05,
+    aimedInterval: 1.25,
+    speedScale: 0.9,
+    circleCount: 12,
+    patterns: ['circle', 'aimed'],
+  },
+  {
+    level: 2,
+    name: '2단계',
+    duration: 20,
+    label: '압박 탄막',
+    patternInterval: 0.82,
+    aimedInterval: 0.95,
+    speedScale: 1.12,
+    circleCount: 16,
+    patterns: ['circle', 'spiral', 'wall', 'aimed'],
+  },
+  {
+    level: 3,
+    name: '3단계',
+    duration: 25,
+    label: '최종 탄막',
+    patternInterval: 0.58,
+    aimedInterval: 0.68,
+    speedScale: 1.35,
+    circleCount: 20,
+    patterns: ['circle', 'spiral', 'wall', 'rain', 'cross', 'aimed'],
+  },
+];
+
+const RANKING_KEY = 'bullet-dodge-ranking-stage-v1';
+const MAX_RANKING = 10;
 
 let gameState = 'ready';
-let player = null;
+let player;
 let bullets = [];
 let particles = [];
 let stars = [];
-let elapsedTime = 0;
+let stageIndex = 0;
+let stageElapsed = 0;
+let totalElapsed = 0;
+let patternTimer = 0;
+let aimedTimer = 0;
 let score = 0;
 let grazeCount = 0;
 let lastTime = 0;
-let patternTimer = 0;
-let aimedTimer = 0;
-let difficultyTimer = 0;
-let difficulty = 1;
 let animationId = null;
-let lastShotSoundTime = 0;
-let lastGrazeSoundTime = 0;
-let pendingRankLog = null;
-let hasSavedCurrentLog = false;
+let stageBannerText = '';
+let stageBannerTimer = 0;
+let lastRunData = null;
+let savedCurrentRun = false;
+let lastShotSoundAt = 0;
 
-let audioContext = null;
+let audioCtx = null;
 let masterGain = null;
+let bgmOscA = null;
+let bgmOscB = null;
 let bgmGain = null;
-let bgmOscillator = null;
-let bgmLfo = null;
-let bgmLfoGain = null;
 let isMuted = false;
 
-function initAudio() {
-  if (audioContext) return;
-
-  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-  if (!AudioContextClass) return;
-
-  audioContext = new AudioContextClass();
-  masterGain = audioContext.createGain();
-  masterGain.gain.value = isMuted ? 0 : 0.42;
-  masterGain.connect(audioContext.destination);
-}
-
-function resumeAudio() {
-  initAudio();
-
-  if (audioContext && audioContext.state === 'suspended') {
-    audioContext.resume();
-  }
-}
-
-function setMasterVolume(value, duration = 0.04) {
-  if (!audioContext || !masterGain) return;
-
-  const now = audioContext.currentTime;
-  masterGain.gain.cancelScheduledValues(now);
-  masterGain.gain.setValueAtTime(masterGain.gain.value, now);
-  masterGain.gain.linearRampToValueAtTime(isMuted ? 0 : value, now + duration);
-}
-
-function updateSoundUI() {
-  soundIndicator.textContent = isMuted ? 'SOUND OFF' : 'SOUND ON';
-  muteButton.textContent = isMuted ? '사운드 켜기' : '사운드 끄기';
-
-  if (audioContext && masterGain) {
-    setMasterVolume(0.42, 0.08);
-  }
-}
-
-function createTone({ frequency, type = 'sine', start = 0, duration = 0.18, volume = 0.2, destination = masterGain }) {
-  if (!audioContext || !destination || isMuted) return;
-
-  const startTime = audioContext.currentTime + start;
-  const oscillator = audioContext.createOscillator();
-  const gain = audioContext.createGain();
-
-  oscillator.type = type;
-  oscillator.frequency.setValueAtTime(frequency, startTime);
-
-  gain.gain.setValueAtTime(0.001, startTime);
-  gain.gain.linearRampToValueAtTime(volume, startTime + 0.015);
-  gain.gain.exponentialRampToValueAtTime(0.001, startTime + duration);
-
-  oscillator.connect(gain);
-  gain.connect(destination);
-  oscillator.start(startTime);
-  oscillator.stop(startTime + duration + 0.03);
-}
-
-function createNoise({ start = 0, duration = 0.22, volume = 0.22, filterFrequency = 900 }) {
-  if (!audioContext || !masterGain || isMuted) return;
-
-  const startTime = audioContext.currentTime + start;
-  const sampleRate = audioContext.sampleRate;
-  const frameCount = Math.max(1, Math.floor(sampleRate * duration));
-  const buffer = audioContext.createBuffer(1, frameCount, sampleRate);
-  const data = buffer.getChannelData(0);
-
-  for (let i = 0; i < frameCount; i += 1) {
-    data[i] = Math.random() * 2 - 1;
-  }
-
-  const source = audioContext.createBufferSource();
-  const filter = audioContext.createBiquadFilter();
-  const gain = audioContext.createGain();
-
-  source.buffer = buffer;
-  filter.type = 'lowpass';
-  filter.frequency.setValueAtTime(filterFrequency, startTime);
-
-  gain.gain.setValueAtTime(volume, startTime);
-  gain.gain.exponentialRampToValueAtTime(0.001, startTime + duration);
-
-  source.connect(filter);
-  filter.connect(gain);
-  gain.connect(masterGain);
-  source.start(startTime);
-}
-
-function playStartSound() {
-  createTone({ frequency: 440, type: 'triangle', start: 0, duration: 0.1, volume: 0.15 });
-  createTone({ frequency: 660, type: 'triangle', start: 0.08, duration: 0.12, volume: 0.18 });
-  createTone({ frequency: 880, type: 'triangle', start: 0.17, duration: 0.18, volume: 0.2 });
-}
-
-function playShotSound() {
-  if (!audioContext || isMuted) return;
-
-  const now = audioContext.currentTime;
-  if (now - lastShotSoundTime < 0.11) return;
-  lastShotSoundTime = now;
-
-  createTone({ frequency: 760 + Math.random() * 90, type: 'square', duration: 0.045, volume: 0.045 });
-}
-
-function playGrazeSound() {
-  if (!audioContext || isMuted) return;
-
-  const now = audioContext.currentTime;
-  if (now - lastGrazeSoundTime < 0.055) return;
-  lastGrazeSoundTime = now;
-
-  createTone({ frequency: 1180 + Math.random() * 240, type: 'sine', duration: 0.07, volume: 0.055 });
-}
-
-function playVictoryEndingSound() {
-  stopBgm();
-  setMasterVolume(0.5, 0.04);
-
-  const notes = [523.25, 659.25, 783.99, 1046.5];
-  notes.forEach((note, index) => {
-    createTone({
-      frequency: note,
-      type: 'triangle',
-      start: index * 0.12,
-      duration: 0.28,
-      volume: 0.18,
-    });
-  });
-
-  createTone({ frequency: 1318.51, type: 'sine', start: 0.52, duration: 0.42, volume: 0.15 });
-  createTone({ frequency: 1567.98, type: 'sine', start: 0.62, duration: 0.34, volume: 0.12 });
-  createTone({ frequency: 2093, type: 'sine', start: 0.74, duration: 0.28, volume: 0.08 });
-}
-
-function playDefeatEndingSound() {
-  stopBgm();
-  setMasterVolume(0.5, 0.04);
-
-  createNoise({ duration: 0.28, volume: 0.24, filterFrequency: 520 });
-
-  const notes = [392, 329.63, 261.63, 196, 130.81];
-  notes.forEach((note, index) => {
-    createTone({
-      frequency: note,
-      type: 'sawtooth',
-      start: 0.08 + index * 0.16,
-      duration: 0.24,
-      volume: 0.13,
-    });
-  });
-
-  createTone({ frequency: 65.41, type: 'sine', start: 0.72, duration: 0.5, volume: 0.18 });
-}
-
-function startBgm() {
-  if (!audioContext || !masterGain || isMuted || bgmOscillator) return;
-
-  bgmGain = audioContext.createGain();
-  bgmGain.gain.value = 0.025;
-
-  bgmOscillator = audioContext.createOscillator();
-  bgmOscillator.type = 'sawtooth';
-  bgmOscillator.frequency.value = 110;
-
-  bgmLfo = audioContext.createOscillator();
-  bgmLfo.type = 'sine';
-  bgmLfo.frequency.value = 5.2;
-
-  bgmLfoGain = audioContext.createGain();
-  bgmLfoGain.gain.value = 18;
-
-  bgmLfo.connect(bgmLfoGain);
-  bgmLfoGain.connect(bgmOscillator.frequency);
-  bgmOscillator.connect(bgmGain);
-  bgmGain.connect(masterGain);
-
-  bgmOscillator.start();
-  bgmLfo.start();
-}
-
-function stopBgm() {
-  if (bgmOscillator) {
-    bgmOscillator.stop();
-    bgmOscillator.disconnect();
-    bgmOscillator = null;
-  }
-
-  if (bgmLfo) {
-    bgmLfo.stop();
-    bgmLfo.disconnect();
-    bgmLfo = null;
-  }
-
-  if (bgmLfoGain) {
-    bgmLfoGain.disconnect();
-    bgmLfoGain = null;
-  }
-
-  if (bgmGain) {
-    bgmGain.disconnect();
-    bgmGain = null;
-  }
-}
-
-function getRankings() {
-  try {
-    const saved = localStorage.getItem(RANKING_STORAGE_KEY);
-    const rankings = saved ? JSON.parse(saved) : [];
-    return Array.isArray(rankings) ? rankings : [];
-  } catch (error) {
-    console.warn('랭킹 데이터를 불러오지 못했습니다.', error);
-    return [];
-  }
-}
-
-function saveRankings(rankings) {
-  try {
-    localStorage.setItem(RANKING_STORAGE_KEY, JSON.stringify(rankings));
-  } catch (error) {
-    console.warn('랭킹 데이터를 저장하지 못했습니다.', error);
-  }
-}
-
-function sortAndLimitRankings(rankings) {
-  return rankings
-    .sort((a, b) => {
-      if (b.score !== a.score) return b.score - a.score;
-      if (b.survivalTime !== a.survivalTime) return b.survivalTime - a.survivalTime;
-      if (b.grazeCount !== a.grazeCount) return b.grazeCount - a.grazeCount;
-      return b.createdAt - a.createdAt;
-    })
-    .slice(0, MAX_RANKING_COUNT);
-}
-
-function escapeHtml(text) {
-  return String(text)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
-}
-
-function formatDate(timestamp) {
-  return new Intl.DateTimeFormat('ko-KR', {
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(new Date(timestamp));
-}
-
-function renderRankingList() {
-  const rankings = sortAndLimitRankings(getRankings());
-  rankingList.innerHTML = '';
-
-  if (rankings.length === 0) {
-    rankingList.innerHTML = '<li class="ranking-empty">아직 저장된 기록이 없습니다.</li>';
-    return;
-  }
-
-  rankings.forEach((ranking, index) => {
-    const listItem = document.createElement('li');
-    const resultClass = ranking.result === 'WIN' ? 'win' : 'lose';
-    const resultText = ranking.result === 'WIN' ? '승리' : '패배';
-    const nickname = escapeHtml(ranking.nickname || 'PLAYER');
-    const safeScore = Number(ranking.score || 0);
-    const safeSurvivalTime = Number(ranking.survivalTime || 0);
-    const safeGrazeCount = Number(ranking.grazeCount || 0);
-
-    listItem.className = 'ranking-item';
-    listItem.innerHTML = `
-      <span class="ranking-rank">${index + 1}</span>
-      <div class="ranking-content">
-        <div class="ranking-name-row">
-          <span class="ranking-name">${nickname}</span>
-          <span class="result-badge ${resultClass}">${resultText}</span>
-        </div>
-        <div class="ranking-score-row">
-          <span class="ranking-meta">${safeSurvivalTime.toFixed(1)}초 · G ${safeGrazeCount}</span>
-          <strong class="ranking-score">${safeScore}점</strong>
-        </div>
-        <div class="ranking-meta">${formatDate(ranking.createdAt || Date.now())}</div>
-      </div>
-    `;
-
-    rankingList.appendChild(listItem);
-  });
-}
-
-function createPendingRankLog(isWin) {
-  return {
-    result: isWin ? 'WIN' : 'LOSE',
-    score,
-    survivalTime: Number(Math.min(elapsedTime, GAME_TIME).toFixed(1)),
-    grazeCount,
-    createdAt: Date.now(),
-  };
-}
-
-function showRankForm() {
-  rankForm.classList.remove('hidden');
-  rankForm.reset();
-  nicknameInput.disabled = false;
-  saveRankButton.disabled = false;
-  rankHelp.textContent = '점수 기준 상위 10개 기록만 저장됩니다.';
-
-  window.setTimeout(() => {
-    nicknameInput.focus();
-  }, 100);
-}
-
-function hideRankForm() {
-  rankForm.classList.add('hidden');
-  rankForm.reset();
-  rankHelp.textContent = '점수 기준 상위 10개 기록만 저장됩니다.';
-}
-
-function saveCurrentRankLog(event) {
-  event.preventDefault();
-
-  if (!pendingRankLog || hasSavedCurrentLog) return;
-
-  const nickname = nicknameInput.value.trim() || 'PLAYER';
-  const newRanking = {
-    ...pendingRankLog,
-    nickname: nickname.slice(0, 12),
-  };
-
-  const rankings = sortAndLimitRankings([...getRankings(), newRanking]);
-  saveRankings(rankings);
-  renderRankingList();
-
-  hasSavedCurrentLog = true;
-  nicknameInput.disabled = true;
-  saveRankButton.disabled = true;
-  rankHelp.textContent = '기록이 저장되었습니다. 다시 플레이하면 새 기록을 남길 수 있습니다.';
-}
-
-function clearRankingLogs() {
-  if (getRankings().length === 0) return;
-
-  const isConfirmed = window.confirm('저장된 랭킹 기록을 모두 삭제할까요?');
-  if (!isConfirmed) return;
-
-  try {
-    localStorage.removeItem(RANKING_STORAGE_KEY);
-  } catch (error) {
-    console.warn('랭킹 데이터를 삭제하지 못했습니다.', error);
-  }
-
-  renderRankingList();
+function getCurrentStage() {
+  return STAGES[stageIndex];
 }
 
 function resetGame() {
   player = {
     x: canvas.width / 2,
-    y: canvas.height - 90,
-    radius: 11,
+    y: canvas.height - 82,
+    radius: 12,
     hitRadius: 6,
     targetX: canvas.width / 2,
-    targetY: canvas.height - 90,
+    targetY: canvas.height - 82,
     invincibleTime: 1.2,
   };
 
   bullets = [];
   particles = [];
-  elapsedTime = 0;
+  stageIndex = 0;
+  stageElapsed = 0;
+  totalElapsed = 0;
+  patternTimer = 0;
+  aimedTimer = 0;
   score = 0;
   grazeCount = 0;
   lastTime = 0;
-  patternTimer = 0;
-  aimedTimer = 0;
-  difficultyTimer = 0;
-  difficulty = 1;
-  lastShotSoundTime = 0;
-  lastGrazeSoundTime = 0;
+  stageBannerText = '1단계 시작';
+  stageBannerTimer = 1.8;
+  lastRunData = null;
+  savedCurrentRun = false;
 
-  stars = Array.from({ length: 90 }, () => ({
+  stars = Array.from({ length: 110 }, () => ({
     x: Math.random() * canvas.width,
     y: Math.random() * canvas.height,
     size: Math.random() * 2 + 0.5,
-    speed: Math.random() * 24 + 12,
+    speed: Math.random() * 26 + 12,
   }));
 
+  rankForm.classList.add('hidden');
+  saveRankButton.disabled = false;
+  rankHelp.textContent = '점수 기준 상위 10개 기록만 저장됩니다.';
   updateHud();
 }
 
 function startGame() {
-  resumeAudio();
-  playStartSound();
-  stopBgm();
-  startBgm();
-  hideRankForm();
-  pendingRankLog = null;
-  hasSavedCurrentLog = false;
-
+  setupAudio();
   resetGame();
   gameState = 'playing';
   overlay.classList.remove('active');
   startButton.textContent = '다시 시작';
+  playStartSound();
+  startBgm();
 
-  if (animationId) {
-    cancelAnimationFrame(animationId);
-  }
-
+  cancelAnimationFrame(animationId);
   animationId = requestAnimationFrame(gameLoop);
 }
 
 function endGame(isWin) {
-  if (gameState === 'end') return;
+  if (gameState === 'ended') return;
 
-  gameState = 'end';
+  gameState = 'ended';
+  cancelAnimationFrame(animationId);
+  stopBgm();
 
-  if (animationId) {
-    cancelAnimationFrame(animationId);
-    animationId = null;
-  }
+  const reachedStage = getCurrentStage();
+  const resultText = isWin ? '승리' : '패배';
 
-  pendingRankLog = createPendingRankLog(isWin);
-  hasSavedCurrentLog = false;
+  lastRunData = {
+    nickname: '',
+    result: resultText,
+    score: Math.floor(score),
+    graze: grazeCount,
+    stage: isWin ? 3 : reachedStage.level,
+    elapsed: totalElapsed,
+    date: new Date().toLocaleString('ko-KR'),
+  };
 
   if (isWin) {
+    panelKicker.textContent = 'ALL CLEAR';
+    panelTitle.textContent = '최종 승리!';
+    panelText.textContent = `3단계를 모두 돌파했습니다. 최종 점수 ${Math.floor(score)}점, Graze ${grazeCount}회입니다.`;
     playVictoryEndingSound();
-    panelKicker.textContent = 'MISSION CLEAR';
-    panelTitle.textContent = '승리!';
-    panelText.textContent = `45초 동안 살아남았습니다. 최종 점수: ${score} / Graze: ${grazeCount}`;
   } else {
-    playDefeatEndingSound();
     panelKicker.textContent = 'GAME OVER';
     panelTitle.textContent = '패배!';
-    panelText.textContent = `탄막에 피격되었습니다. 생존 시간: ${elapsedTime.toFixed(1)}초 / 점수: ${score} / Graze: ${grazeCount}`;
+    panelText.textContent = `${reachedStage.name}에서 피격되었습니다. 생존 시간 ${totalElapsed.toFixed(1)}초, 점수 ${Math.floor(score)}점입니다.`;
+    playDefeatEndingSound();
   }
 
-  showRankForm();
-  renderRankingList();
+  nicknameInput.value = '';
+  rankForm.classList.remove('hidden');
   overlay.classList.add('active');
+  updateHud();
+}
+
+function advanceStage() {
+  const currentStage = getCurrentStage();
+
+  score += currentStage.level * 500;
+
+  if (stageIndex >= STAGES.length - 1) {
+    endGame(true);
+    return;
+  }
+
+  stageIndex += 1;
+  stageElapsed = 0;
+  patternTimer = 0;
+  aimedTimer = 0;
+  bullets = [];
+  player.invincibleTime = 1.4;
+  stageBannerText = `${getCurrentStage().name} 시작`;
+  stageBannerTimer = 2;
+  playStageUpSound();
+  updateHud();
 }
 
 function updateHud() {
-  const remainTime = Math.max(0, GAME_TIME - elapsedTime);
+  const currentStage = getCurrentStage();
+  const remainTime = Math.max(0, currentStage.duration - stageElapsed);
+
+  stageText.textContent = currentStage.level;
   timeText.textContent = remainTime.toFixed(1);
-  scoreText.textContent = String(score);
-  grazeText.textContent = String(grazeCount);
+  scoreText.textContent = Math.floor(score);
+  grazeText.textContent = grazeCount;
 }
 
 function getPointerPosition(event) {
@@ -516,18 +231,14 @@ function movePlayerTo(x, y) {
 
 function handleMouseMove(event) {
   if (gameState !== 'playing') return;
-
   const pos = getPointerPosition(event);
   movePlayerTo(pos.x, pos.y);
 }
 
 function handleTouchMove(event) {
   if (gameState !== 'playing') return;
-
   event.preventDefault();
   const touch = event.touches[0];
-  if (!touch) return;
-
   const pos = getPointerPosition(touch);
   movePlayerTo(pos.x, pos.y);
 }
@@ -541,272 +252,382 @@ function createBullet(x, y, vx, vy, radius, color, glowColor) {
     radius,
     color,
     glowColor,
-    grazed: false,
     rotation: Math.random() * Math.PI * 2,
+    grazed: false,
   });
 }
 
-function createCirclePattern() {
-  const centerX = canvas.width / 2;
-  const centerY = canvas.height / 2;
-  const count = Math.floor(14 + difficulty * 2);
-  const speed = 80 + difficulty * 14;
-  const offset = elapsedTime * 0.7;
+function createPattern() {
+  const stage = getCurrentStage();
+  const patternName = stage.patterns[Math.floor(Math.random() * stage.patterns.length)];
 
-  for (let i = 0; i < count; i += 1) {
+  if (patternName === 'circle') createCirclePattern();
+  if (patternName === 'spiral') createSpiralPattern();
+  if (patternName === 'wall') createWallPattern();
+  if (patternName === 'rain') createRainPattern();
+  if (patternName === 'cross') createCrossPattern();
+  if (patternName === 'aimed') createAimedBurst(stage.level);
+
+  playShotSound();
+}
+
+function createCirclePattern() {
+  const stage = getCurrentStage();
+  const centerX = canvas.width / 2 + Math.sin(totalElapsed * 1.2) * 90;
+  const centerY = canvas.height / 2 + Math.cos(totalElapsed * 0.9) * 50;
+  const count = stage.circleCount;
+  const speed = 95 * stage.speedScale + stage.level * 12;
+  const offset = totalElapsed * (0.6 + stage.level * 0.22);
+
+  for (let i = 0; i < count; i++) {
     const angle = (Math.PI * 2 / count) * i + offset;
     createBullet(
       centerX,
       centerY,
       Math.cos(angle) * speed,
       Math.sin(angle) * speed,
-      6,
+      stage.level === 3 ? 5.7 : 6.5,
       '#ff6bba',
       'rgba(255, 107, 186, 0.75)'
     );
   }
-
-  playShotSound();
 }
 
 function createSpiralPattern() {
+  const stage = getCurrentStage();
   const centerX = canvas.width / 2;
   const centerY = canvas.height / 2;
-  const arms = 4;
-  const speed = 110 + difficulty * 12;
+  const arms = stage.level === 2 ? 4 : 6;
+  const speed = 112 * stage.speedScale;
 
-  for (let i = 0; i < arms; i += 1) {
-    const angle = elapsedTime * 3 + (Math.PI * 2 / arms) * i;
+  for (let i = 0; i < arms; i++) {
+    const angle = totalElapsed * (2.3 + stage.level * 0.34) + (Math.PI * 2 / arms) * i;
     createBullet(
       centerX,
       centerY,
       Math.cos(angle) * speed,
       Math.sin(angle) * speed,
-      5,
+      5.5,
       '#8ea2ff',
       'rgba(142, 162, 255, 0.75)'
     );
   }
-
-  playShotSound();
 }
 
 function createWallPattern() {
+  const stage = getCurrentStage();
   const fromLeft = Math.random() > 0.5;
-  const x = fromLeft ? -20 : canvas.width + 20;
+  const x = fromLeft ? -24 : canvas.width + 24;
   const dir = fromLeft ? 1 : -1;
-  const gapY = 90 + Math.random() * (canvas.height - 180);
-  const speed = 90 + difficulty * 14;
+  const gapY = 85 + Math.random() * (canvas.height - 170);
+  const speed = 95 * stage.speedScale + stage.level * 12;
+  const spacing = stage.level === 3 ? 28 : 34;
+  const gapSize = stage.level === 3 ? 46 : 58;
 
-  for (let y = 35; y < canvas.height; y += 34) {
-    if (Math.abs(y - gapY) < 58) continue;
+  for (let y = 32; y < canvas.height; y += spacing) {
+    if (Math.abs(y - gapY) < gapSize) continue;
 
     createBullet(
       x,
       y,
       dir * speed,
-      Math.sin(y * 0.03) * 18,
-      7,
+      Math.sin(y * 0.04 + totalElapsed) * 24,
+      6.2,
       '#ffd166',
       'rgba(255, 209, 102, 0.75)'
     );
   }
-
-  playShotSound();
 }
 
-function createAimedBullet() {
-  if (!player) return;
+function createRainPattern() {
+  const stage = getCurrentStage();
+  const count = 7 + stage.level * 2;
+  const speed = 130 * stage.speedScale;
 
+  for (let i = 0; i < count; i++) {
+    const x = Math.random() * canvas.width;
+    const angle = Math.PI / 2 + (Math.random() - 0.5) * 0.42;
+
+    createBullet(
+      x,
+      -24,
+      Math.cos(angle) * speed,
+      Math.sin(angle) * speed,
+      5.2,
+      '#4df3ff',
+      'rgba(77, 243, 255, 0.75)'
+    );
+  }
+}
+
+function createCrossPattern() {
+  const stage = getCurrentStage();
+  const points = [
+    { x: -20, y: -20 },
+    { x: canvas.width + 20, y: -20 },
+    { x: canvas.width + 20, y: canvas.height + 20 },
+    { x: -20, y: canvas.height + 20 },
+  ];
+  const targetX = canvas.width / 2 + Math.sin(totalElapsed * 2) * 120;
+  const targetY = canvas.height / 2 + Math.cos(totalElapsed * 2) * 80;
+  const speed = 145 * stage.speedScale;
+
+  points.forEach((point) => {
+    const dx = targetX - point.x;
+    const dy = targetY - point.y;
+    const distance = Math.hypot(dx, dy) || 1;
+
+    createBullet(
+      point.x,
+      point.y,
+      dx / distance * speed,
+      dy / distance * speed,
+      5.4,
+      '#b388ff',
+      'rgba(179, 136, 255, 0.75)'
+    );
+  });
+}
+
+function createAimedBurst(amount) {
+  for (let i = 0; i < amount; i++) {
+    createAimedBullet(i, amount);
+  }
+}
+
+function createAimedBullet(index = 0, total = 1) {
+  const stage = getCurrentStage();
   const side = Math.floor(Math.random() * 4);
-  let x = 0;
-  let y = 0;
+  let x;
+  let y;
 
   if (side === 0) {
     x = Math.random() * canvas.width;
-    y = -20;
+    y = -24;
   } else if (side === 1) {
-    x = canvas.width + 20;
+    x = canvas.width + 24;
     y = Math.random() * canvas.height;
   } else if (side === 2) {
     x = Math.random() * canvas.width;
-    y = canvas.height + 20;
+    y = canvas.height + 24;
   } else {
-    x = -20;
+    x = -24;
     y = Math.random() * canvas.height;
   }
 
-  const dx = player.x - x;
-  const dy = player.y - y;
-  const distance = Math.hypot(dx, dy) || 1;
-  const speed = 120 + difficulty * 16;
+  const spread = (index - (total - 1) / 2) * 0.13;
+  const baseAngle = Math.atan2(player.y - y, player.x - x) + spread;
+  const speed = 130 * stage.speedScale + stage.level * 14;
 
   createBullet(
     x,
     y,
-    dx / distance * speed,
-    dy / distance * speed,
-    6,
+    Math.cos(baseAngle) * speed,
+    Math.sin(baseAngle) * speed,
+    5.6,
     '#4df3ff',
     'rgba(77, 243, 255, 0.75)'
   );
 }
 
-function createHitParticles(x, y) {
-  for (let i = 0; i < 26; i += 1) {
+function createHitParticles(x, y, color = '#ffffff') {
+  for (let i = 0; i < 28; i++) {
     const angle = Math.random() * Math.PI * 2;
-    const speed = 80 + Math.random() * 210;
+    const speed = 80 + Math.random() * 220;
 
     particles.push({
       x,
       y,
       vx: Math.cos(angle) * speed,
       vy: Math.sin(angle) * speed,
-      life: 0.75,
-      maxLife: 0.75,
+      life: 0.72,
+      maxLife: 0.72,
       radius: 2 + Math.random() * 3.2,
-      color: Math.random() > 0.45 ? '#ffffff' : '#ff6bba',
-    });
-  }
-}
-
-function createGrazeParticles(x, y) {
-  for (let i = 0; i < 4; i += 1) {
-    particles.push({
-      x: x + (Math.random() - 0.5) * 18,
-      y: y + (Math.random() - 0.5) * 18,
-      vx: (Math.random() - 0.5) * 80,
-      vy: (Math.random() - 0.5) * 80,
-      life: 0.28,
-      maxLife: 0.28,
-      radius: 1.2 + Math.random() * 1.8,
-      color: '#73f7ff',
+      color,
     });
   }
 }
 
 function updateGame(deltaTime) {
-  elapsedTime += deltaTime;
+  const stage = getCurrentStage();
+
+  totalElapsed += deltaTime;
+  stageElapsed += deltaTime;
   patternTimer += deltaTime;
   aimedTimer += deltaTime;
-  difficultyTimer += deltaTime;
+  stageBannerTimer = Math.max(0, stageBannerTimer - deltaTime);
 
-  if (elapsedTime >= GAME_TIME) {
-    elapsedTime = GAME_TIME;
-    score = Math.floor(elapsedTime * 100 + grazeCount * 75);
-    updateHud();
-    endGame(true);
+  if (stageElapsed >= stage.duration) {
+    advanceStage();
     return;
   }
 
-  if (difficultyTimer >= 5) {
-    difficultyTimer = 0;
-    difficulty += 0.35;
-  }
+  score += deltaTime * (15 + stage.level * 12);
 
-  player.invincibleTime = Math.max(0, player.invincibleTime - deltaTime);
-  player.x += (player.targetX - player.x) * 0.25;
-  player.y += (player.targetY - player.y) * 0.25;
-
-  if (patternTimer >= Math.max(0.72, 1.45 - difficulty * 0.08)) {
+  if (patternTimer >= stage.patternInterval) {
     patternTimer = 0;
-
-    const random = Math.random();
-    if (random < 0.42) {
-      createCirclePattern();
-    } else if (random < 0.78) {
-      createSpiralPattern();
-    } else {
-      createWallPattern();
-    }
+    createPattern();
   }
 
-  if (aimedTimer >= Math.max(0.32, 0.8 - difficulty * 0.045)) {
+  if (aimedTimer >= stage.aimedInterval) {
     aimedTimer = 0;
-    createAimedBullet();
+    createAimedBurst(stage.level);
+    playShotSound();
   }
 
-  bullets.forEach((bullet) => {
-    bullet.x += bullet.vx * deltaTime;
-    bullet.y += bullet.vy * deltaTime;
-    bullet.rotation += deltaTime * 5;
-  });
+  player.x += (player.targetX - player.x) * Math.min(1, deltaTime * 14);
+  player.y += (player.targetY - player.y) * Math.min(1, deltaTime * 14);
+  player.invincibleTime = Math.max(0, player.invincibleTime - deltaTime);
 
-  bullets = bullets.filter((bullet) => (
-    bullet.x > -80 &&
-    bullet.x < canvas.width + 80 &&
-    bullet.y > -80 &&
-    bullet.y < canvas.height + 80
-  ));
-
-  particles.forEach((particle) => {
-    particle.x += particle.vx * deltaTime;
-    particle.y += particle.vy * deltaTime;
-    particle.life -= deltaTime;
-  });
-
-  particles = particles.filter((particle) => particle.life > 0);
-
-  stars.forEach((star) => {
-    star.y += star.speed * deltaTime;
-    if (star.y > canvas.height) {
-      star.x = Math.random() * canvas.width;
-      star.y = -5;
-    }
-  });
-
-  checkCollisionAndGraze();
-  score = Math.floor(elapsedTime * 100 + grazeCount * 75);
+  updateStars(deltaTime);
+  updateBullets(deltaTime);
+  updateParticles(deltaTime);
   updateHud();
 }
 
-function checkCollisionAndGraze() {
-  if (!player || player.invincibleTime > 0) return;
+function updateStars(deltaTime) {
+  const stage = getCurrentStage();
 
-  for (const bullet of bullets) {
+  stars.forEach((star) => {
+    star.y += (star.speed + stage.level * 8) * deltaTime;
+
+    if (star.y > canvas.height) {
+      star.y = -5;
+      star.x = Math.random() * canvas.width;
+    }
+  });
+}
+
+function updateBullets(deltaTime) {
+  for (let i = bullets.length - 1; i >= 0; i--) {
+    const bullet = bullets[i];
+    bullet.x += bullet.vx * deltaTime;
+    bullet.y += bullet.vy * deltaTime;
+    bullet.rotation += deltaTime * 4;
+
     const distance = Math.hypot(player.x - bullet.x, player.y - bullet.y);
 
-    if (distance < player.hitRadius + bullet.radius) {
-      createHitParticles(player.x, player.y);
-      drawGame();
+    if (!bullet.grazed && distance < player.radius + bullet.radius + 22 && distance > player.hitRadius + bullet.radius) {
+      bullet.grazed = true;
+      grazeCount += 1;
+      score += 80 + getCurrentStage().level * 35;
+      createHitParticles(bullet.x, bullet.y, bullet.color);
+      playGrazeSound();
+    }
+
+    if (player.invincibleTime <= 0 && distance < player.hitRadius + bullet.radius) {
+      createHitParticles(player.x, player.y, '#ff5fb7');
+      playHitSound();
       endGame(false);
       return;
     }
 
-    if (!bullet.grazed && distance < player.hitRadius + bullet.radius + GRAZE_DISTANCE) {
-      bullet.grazed = true;
-      grazeCount += 1;
-      createGrazeParticles(player.x, player.y);
-      playGrazeSound();
+    if (
+      bullet.x < -90 ||
+      bullet.x > canvas.width + 90 ||
+      bullet.y < -90 ||
+      bullet.y > canvas.height + 90
+    ) {
+      bullets.splice(i, 1);
     }
   }
 }
 
-function drawBackground() {
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
+function updateParticles(deltaTime) {
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const particle = particles[i];
+    particle.x += particle.vx * deltaTime;
+    particle.y += particle.vy * deltaTime;
+    particle.vx *= 0.985;
+    particle.vy *= 0.985;
+    particle.life -= deltaTime;
 
-  const gradient = ctx.createRadialGradient(
-    canvas.width / 2,
-    canvas.height / 2,
-    80,
-    canvas.width / 2,
-    canvas.height / 2,
-    620
-  );
-  gradient.addColorStop(0, '#111a3c');
-  gradient.addColorStop(1, '#040611');
+    if (particle.life <= 0) {
+      particles.splice(i, 1);
+    }
+  }
+}
+
+function drawGame() {
+  drawBackground();
+  drawStars();
+  drawStageGuide();
+  drawBullets();
+  drawParticles();
+  drawPlayer();
+  drawStageBanner();
+}
+
+function drawBackground() {
+  const stage = getCurrentStage();
+  const gradient = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
+
+  if (stage.level === 1) {
+    gradient.addColorStop(0, '#081026');
+    gradient.addColorStop(1, '#050712');
+  } else if (stage.level === 2) {
+    gradient.addColorStop(0, '#111034');
+    gradient.addColorStop(1, '#080716');
+  } else {
+    gradient.addColorStop(0, '#1c0b2d');
+    gradient.addColorStop(1, '#060510');
+  }
 
   ctx.fillStyle = gradient;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  ctx.fillStyle = 'rgba(255, 255, 255, 0.72)';
+  ctx.save();
+  ctx.globalAlpha = 0.08 + stage.level * 0.02;
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth = 1;
+
+  for (let x = 0; x < canvas.width; x += 40) {
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, canvas.height);
+    ctx.stroke();
+  }
+
+  for (let y = 0; y < canvas.height; y += 40) {
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(canvas.width, y);
+    ctx.stroke();
+  }
+
+  ctx.restore();
+}
+
+function drawStars() {
+  ctx.save();
+  ctx.fillStyle = 'rgba(220, 230, 255, 0.8)';
+
   stars.forEach((star) => {
-    ctx.globalAlpha = 0.25 + star.size * 0.2;
+    ctx.globalAlpha = 0.28 + star.size * 0.18;
     ctx.beginPath();
     ctx.arc(star.x, star.y, star.size, 0, Math.PI * 2);
     ctx.fill();
   });
-  ctx.globalAlpha = 1;
+
+  ctx.restore();
+}
+
+function drawStageGuide() {
+  const stage = getCurrentStage();
+  const progress = stageElapsed / stage.duration;
+  const barWidth = canvas.width * progress;
+
+  ctx.save();
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.08)';
+  ctx.fillRect(0, 0, canvas.width, 7);
+
+  ctx.fillStyle = stage.level === 1 ? '#8ea2ff' : stage.level === 2 ? '#ffd166' : '#ff5fb7';
+  ctx.fillRect(0, 0, barWidth, 7);
+
+  ctx.font = '700 13px Arial';
+  ctx.fillStyle = 'rgba(244, 247, 255, 0.7)';
+  ctx.fillText(`${stage.name} · ${stage.label}`, 16, 28);
+  ctx.restore();
 }
 
 function drawBullets() {
@@ -823,12 +644,29 @@ function drawBullets() {
     ctx.fill();
 
     ctx.shadowBlur = 0;
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)';
-    ctx.lineWidth = 1.4;
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.65)';
+    ctx.lineWidth = 1.5;
     ctx.beginPath();
-    ctx.arc(0, 0, bullet.radius * 0.48, 0, Math.PI * 2);
+    ctx.moveTo(-bullet.radius * 0.7, 0);
+    ctx.lineTo(bullet.radius * 0.7, 0);
     ctx.stroke();
 
+    ctx.restore();
+  });
+}
+
+function drawParticles() {
+  particles.forEach((particle) => {
+    const alpha = particle.life / particle.maxLife;
+
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = particle.color;
+    ctx.shadowBlur = 12;
+    ctx.shadowColor = particle.color;
+    ctx.beginPath();
+    ctx.arc(particle.x, particle.y, particle.radius * alpha, 0, Math.PI * 2);
+    ctx.fill();
     ctx.restore();
   });
 }
@@ -836,74 +674,75 @@ function drawBullets() {
 function drawPlayer() {
   if (!player) return;
 
-  const blink = player.invincibleTime > 0 && Math.floor(player.invincibleTime * 12) % 2 === 0;
-  if (blink) return;
+  const blink = player.invincibleTime > 0 && Math.floor(totalElapsed * 12) % 2 === 0;
 
   ctx.save();
   ctx.translate(player.x, player.y);
 
-  ctx.shadowBlur = 22;
-  ctx.shadowColor = 'rgba(255, 255, 255, 0.85)';
-  ctx.fillStyle = '#ffffff';
+  ctx.globalAlpha = blink ? 0.48 : 1;
+  ctx.shadowBlur = 24;
+  ctx.shadowColor = 'rgba(77, 243, 255, 0.9)';
+  ctx.fillStyle = '#4df3ff';
   ctx.beginPath();
-  ctx.moveTo(0, -player.radius - 4);
-  ctx.lineTo(player.radius + 5, player.radius + 6);
-  ctx.lineTo(0, player.radius);
-  ctx.lineTo(-player.radius - 5, player.radius + 6);
-  ctx.closePath();
+  ctx.arc(0, 0, player.radius, 0, Math.PI * 2);
   ctx.fill();
 
   ctx.shadowBlur = 0;
-  ctx.fillStyle = '#ff5fb7';
+  ctx.fillStyle = '#ffffff';
   ctx.beginPath();
-  ctx.arc(0, 1, player.hitRadius, 0, Math.PI * 2);
+  ctx.arc(0, 0, player.hitRadius, 0, Math.PI * 2);
   ctx.fill();
 
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)';
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
   ctx.lineWidth = 2;
   ctx.beginPath();
-  ctx.arc(0, 1, player.hitRadius + 3, 0, Math.PI * 2);
+  ctx.arc(0, 0, player.radius + 8, 0, Math.PI * 2);
   ctx.stroke();
 
   ctx.restore();
 }
 
-function drawParticles() {
-  particles.forEach((particle) => {
-    const alpha = particle.life / particle.maxLife;
-    ctx.globalAlpha = alpha;
-    ctx.fillStyle = particle.color || '#ffffff';
-    ctx.beginPath();
-    ctx.arc(particle.x, particle.y, particle.radius, 0, Math.PI * 2);
-    ctx.fill();
-  });
-  ctx.globalAlpha = 1;
-}
+function drawStageBanner() {
+  if (stageBannerTimer <= 0) return;
 
-function drawWarningText() {
-  if (!player || player.invincibleTime <= 0 || gameState !== 'playing') return;
+  const alpha = Math.min(1, stageBannerTimer / 0.7);
+  const stage = getCurrentStage();
 
-  ctx.fillStyle = 'rgba(255, 255, 255, 0.72)';
-  ctx.font = '18px Arial';
+  ctx.save();
+  ctx.globalAlpha = alpha;
   ctx.textAlign = 'center';
-  ctx.fillText('무적 시간', canvas.width / 2, 36);
+  ctx.fillStyle = 'rgba(5, 7, 18, 0.62)';
+  roundRect(canvas.width / 2 - 170, canvas.height / 2 - 48, 340, 96, 24);
+  ctx.fill();
+
+  ctx.fillStyle = stage.level === 1 ? '#8ea2ff' : stage.level === 2 ? '#ffd166' : '#ff5fb7';
+  ctx.font = '900 34px Arial';
+  ctx.fillText(stageBannerText, canvas.width / 2, canvas.height / 2 - 4);
+
+  ctx.fillStyle = 'rgba(244, 247, 255, 0.8)';
+  ctx.font = '700 14px Arial';
+  ctx.fillText(stage.label, canvas.width / 2, canvas.height / 2 + 24);
+  ctx.restore();
 }
 
-function drawGame() {
-  drawBackground();
-  drawBullets();
-  drawParticles();
-  drawPlayer();
-  drawWarningText();
+function roundRect(x, y, width, height, radius) {
+  ctx.beginPath();
+  ctx.moveTo(x + radius, y);
+  ctx.lineTo(x + width - radius, y);
+  ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
+  ctx.lineTo(x + width, y + height - radius);
+  ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+  ctx.lineTo(x + radius, y + height);
+  ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
+  ctx.lineTo(x, y + radius);
+  ctx.quadraticCurveTo(x, y, x + radius, y);
+  ctx.closePath();
 }
 
 function gameLoop(timestamp) {
   if (gameState !== 'playing') return;
 
-  if (!lastTime) {
-    lastTime = timestamp;
-  }
-
+  if (!lastTime) lastTime = timestamp;
   const deltaTime = Math.min((timestamp - lastTime) / 1000, 0.033);
   lastTime = timestamp;
 
@@ -915,27 +754,256 @@ function gameLoop(timestamp) {
   }
 }
 
+function loadRankings() {
+  try {
+    const rawData = localStorage.getItem(RANKING_KEY);
+    return rawData ? JSON.parse(rawData) : [];
+  } catch (error) {
+    console.warn('랭킹 데이터를 불러오지 못했습니다.', error);
+    return [];
+  }
+}
+
+function saveRankings(rankings) {
+  localStorage.setItem(RANKING_KEY, JSON.stringify(rankings));
+}
+
+function addRanking(record) {
+  const rankings = loadRankings();
+  const nextRankings = [...rankings, record]
+    .sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      return b.elapsed - a.elapsed;
+    })
+    .slice(0, MAX_RANKING);
+
+  saveRankings(nextRankings);
+  renderRankings();
+}
+
+function renderRankings() {
+  const rankings = loadRankings();
+  rankingList.innerHTML = '';
+
+  if (rankings.length === 0) {
+    const emptyItem = document.createElement('li');
+    emptyItem.className = 'empty-rank';
+    emptyItem.textContent = '아직 저장된 기록이 없습니다.';
+    rankingList.appendChild(emptyItem);
+    return;
+  }
+
+  rankings.forEach((rank, index) => {
+    const item = document.createElement('li');
+    const resultIcon = rank.result === '승리' ? 'CLEAR' : 'FAIL';
+
+    item.innerHTML = `
+      <div class="rank-top">
+        <span class="rank-name">#${index + 1} ${escapeHtml(rank.nickname)}</span>
+        <span class="rank-score">${rank.score}점</span>
+      </div>
+      <div class="rank-meta">${resultIcon} · ${rank.stage}단계 · ${Number(rank.elapsed).toFixed(1)}초 · Graze ${rank.graze}회<br>${rank.date}</div>
+    `;
+
+    rankingList.appendChild(item);
+  });
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;');
+}
+
+function handleRankSubmit(event) {
+  event.preventDefault();
+
+  if (!lastRunData || savedCurrentRun) return;
+
+  const nickname = nicknameInput.value.trim() || 'PLAYER';
+  const record = {
+    ...lastRunData,
+    nickname: nickname.slice(0, 12),
+  };
+
+  addRanking(record);
+  savedCurrentRun = true;
+  saveRankButton.disabled = true;
+  rankHelp.textContent = '기록이 저장되었습니다.';
+}
+
+function clearRankings() {
+  const ok = confirm('저장된 TOP 10 기록을 모두 삭제할까요?');
+  if (!ok) return;
+
+  localStorage.removeItem(RANKING_KEY);
+  renderRankings();
+}
+
+function setupAudio() {
+  if (audioCtx) {
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    return;
+  }
+
+  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+  audioCtx = new AudioContextClass();
+  masterGain = audioCtx.createGain();
+  masterGain.gain.value = isMuted ? 0 : 1;
+  masterGain.connect(audioCtx.destination);
+}
+
+function playTone(frequency, duration, type = 'sine', volume = 0.08, delay = 0) {
+  if (isMuted) return;
+  setupAudio();
+
+  const startAt = audioCtx.currentTime + delay;
+  const oscillator = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+
+  oscillator.type = type;
+  oscillator.frequency.setValueAtTime(frequency, startAt);
+  gain.gain.setValueAtTime(0.0001, startAt);
+  gain.gain.exponentialRampToValueAtTime(volume, startAt + 0.015);
+  gain.gain.exponentialRampToValueAtTime(0.0001, startAt + duration);
+
+  oscillator.connect(gain);
+  gain.connect(masterGain);
+  oscillator.start(startAt);
+  oscillator.stop(startAt + duration + 0.04);
+}
+
+function playNoise(duration, volume = 0.07) {
+  if (isMuted) return;
+  setupAudio();
+
+  const sampleRate = audioCtx.sampleRate;
+  const bufferSize = sampleRate * duration;
+  const buffer = audioCtx.createBuffer(1, bufferSize, sampleRate);
+  const data = buffer.getChannelData(0);
+
+  for (let i = 0; i < bufferSize; i++) {
+    data[i] = (Math.random() * 2 - 1) * (1 - i / bufferSize);
+  }
+
+  const source = audioCtx.createBufferSource();
+  const gain = audioCtx.createGain();
+
+  gain.gain.value = volume;
+  source.buffer = buffer;
+  source.connect(gain);
+  gain.connect(masterGain);
+  source.start();
+}
+
+function startBgm() {
+  if (isMuted) return;
+  setupAudio();
+  stopBgm();
+
+  bgmOscA = audioCtx.createOscillator();
+  bgmOscB = audioCtx.createOscillator();
+  bgmGain = audioCtx.createGain();
+
+  bgmOscA.type = 'triangle';
+  bgmOscB.type = 'sawtooth';
+  bgmOscA.frequency.value = 55;
+  bgmOscB.frequency.value = 110;
+  bgmGain.gain.value = 0.018;
+
+  bgmOscA.connect(bgmGain);
+  bgmOscB.connect(bgmGain);
+  bgmGain.connect(masterGain);
+
+  bgmOscA.start();
+  bgmOscB.start();
+}
+
+function stopBgm() {
+  [bgmOscA, bgmOscB].forEach((oscillator) => {
+    if (!oscillator) return;
+    try {
+      oscillator.stop();
+    } catch (error) {
+      // 이미 정지된 오실레이터는 무시합니다.
+    }
+  });
+
+  bgmOscA = null;
+  bgmOscB = null;
+  bgmGain = null;
+}
+
+function playStartSound() {
+  playTone(330, 0.08, 'square', 0.08);
+  playTone(660, 0.12, 'square', 0.08, 0.08);
+}
+
+function playShotSound() {
+  const now = performance.now();
+  if (now - lastShotSoundAt < 110) return;
+  lastShotSoundAt = now;
+
+  playTone(880, 0.05, 'square', 0.025);
+}
+
+function playGrazeSound() {
+  playTone(1240, 0.05, 'triangle', 0.045);
+}
+
+function playHitSound() {
+  playNoise(0.22, 0.12);
+  playTone(120, 0.24, 'sawtooth', 0.09);
+}
+
+function playStageUpSound() {
+  playTone(440, 0.08, 'triangle', 0.07);
+  playTone(660, 0.08, 'triangle', 0.07, 0.09);
+  playTone(990, 0.16, 'triangle', 0.08, 0.18);
+}
+
+function playVictoryEndingSound() {
+  playTone(523.25, 0.12, 'triangle', 0.09);
+  playTone(659.25, 0.12, 'triangle', 0.09, 0.12);
+  playTone(783.99, 0.16, 'triangle', 0.1, 0.24);
+  playTone(1046.5, 0.32, 'triangle', 0.11, 0.42);
+}
+
+function playDefeatEndingSound() {
+  playTone(220, 0.16, 'sawtooth', 0.09);
+  playTone(174.61, 0.18, 'sawtooth', 0.08, 0.15);
+  playTone(130.81, 0.36, 'sawtooth', 0.08, 0.32);
+  playNoise(0.18, 0.07);
+}
+
 function toggleMute() {
-  resumeAudio();
   isMuted = !isMuted;
+
+  if (masterGain) {
+    masterGain.gain.value = isMuted ? 0 : 1;
+  }
 
   if (isMuted) {
     stopBgm();
   } else if (gameState === 'playing') {
+    setupAudio();
     startBgm();
   }
 
-  updateSoundUI();
+  muteButton.textContent = isMuted ? '사운드 켜기' : '사운드 끄기';
+  soundIndicator.textContent = isMuted ? 'SOUND OFF' : 'SOUND ON';
 }
 
 canvas.addEventListener('mousemove', handleMouseMove);
 canvas.addEventListener('touchmove', handleTouchMove, { passive: false });
 startButton.addEventListener('click', startGame);
 muteButton.addEventListener('click', toggleMute);
-rankForm.addEventListener('submit', saveCurrentRankLog);
-clearRankingButton.addEventListener('click', clearRankingLogs);
+rankForm.addEventListener('submit', handleRankSubmit);
+clearRankingButton.addEventListener('click', clearRankings);
 
 resetGame();
-updateSoundUI();
-renderRankingList();
 drawGame();
+renderRankings();
