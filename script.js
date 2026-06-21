@@ -26,6 +26,7 @@ const clearRankingButton = document.getElementById('clearRankingButton');
 const STAGE_TIME = 15;
 const RANKING_KEY = 'bulletDodgeRankingV4';
 const PLAYER_KEYBOARD_SPEED = 360;
+const BGM_PATH = 'sound/bgm.mp3';
 
 const stageConfigs = {
   1: {
@@ -103,8 +104,7 @@ const keyboardInput = {
 let audioContext = null;
 let masterGain = null;
 let isMuted = false;
-let bgmOscillator = null;
-let bgmGain = null;
+let bgmAudio = null;
 let shotSoundCooldown = 0;
 let grazeSoundCooldown = 0;
 
@@ -113,6 +113,13 @@ function getConfig() {
 }
 
 function initAudio() {
+  if (!bgmAudio) {
+    bgmAudio = new Audio(BGM_PATH);
+    bgmAudio.loop = true;
+    bgmAudio.volume = 0.36;
+    bgmAudio.preload = 'auto';
+  }
+
   if (audioContext) return;
 
   const AudioContext = window.AudioContext || window.webkitAudioContext;
@@ -223,33 +230,19 @@ function playFinishRunSound() {
 }
 
 function startBgm() {
-  if (!audioContext || isMuted || bgmOscillator) return;
+  if (!bgmAudio || isMuted) return;
 
-  bgmOscillator = audioContext.createOscillator();
-  bgmGain = audioContext.createGain();
-
-  bgmOscillator.type = 'sine';
-  bgmOscillator.frequency.value = 55;
-  bgmGain.gain.value = 0.025;
-
-  bgmOscillator.connect(bgmGain);
-  bgmGain.connect(masterGain);
-  bgmOscillator.start();
+  bgmAudio.muted = false;
+  bgmAudio.play().catch(() => {
+    // 브라우저가 자동 재생을 막는 경우 다음 사용자 입력 때 다시 시도합니다.
+  });
 }
 
 function stopBgm() {
-  if (!bgmOscillator) return;
+  if (!bgmAudio) return;
 
-  try {
-    bgmOscillator.stop();
-  } catch (error) {
-    // 이미 정지된 경우 무시합니다.
-  }
-
-  bgmOscillator.disconnect();
-  bgmGain.disconnect();
-  bgmOscillator = null;
-  bgmGain = null;
+  bgmAudio.pause();
+  bgmAudio.currentTime = 0;
 }
 
 function updateSoundUi() {
@@ -260,8 +253,13 @@ function updateSoundUi() {
     masterGain.gain.value = isMuted ? 0 : 0.36;
   }
 
+  if (bgmAudio) {
+    bgmAudio.muted = isMuted;
+    bgmAudio.volume = isMuted ? 0 : 0.36;
+  }
+
   if (isMuted) {
-    stopBgm();
+    if (bgmAudio) bgmAudio.pause();
   } else if (gameState === 'playing') {
     startBgm();
   }
