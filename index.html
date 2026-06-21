@@ -40,6 +40,7 @@
         <section class="play-panel" aria-label="게임 플레이 영역">
           <div class="game-area" id="gameArea">
             <canvas id="gameCanvas" width="800" height="520" aria-label="탄막 피하기 게임 화면"></canvas>
+            <audio id="bgmAudio" src="sound/bgm.mp3" preload="auto" loop></audio>
 
             <div class="top-badges">
               <span class="sound-indicator" id="soundIndicator">SOUND ON</span>
@@ -50,7 +51,7 @@
               <div class="overlay-panel">
                 <p class="panel-kicker" id="panelKicker">READY</p>
                 <h2 id="panelTitle">3단계 이후 무한모드에 도전하세요</h2>
-                <p id="panelText">마우스로 플레이어를 움직여 탄막을 피하세요. 1~3단계는 각 15초이며, 이후에는 무한모드로 전환됩니다.</p>
+                <p id="panelText">WASD로 플레이어를 움직여 탄막을 피하세요. 1~3단계는 각 15초이며, 이후에는 무한모드로 전환됩니다.</p>
 
                 <form class="rank-form hidden" id="rankForm">
                   <label for="nicknameInput">닉네임을 입력하고 플레이 로그를 저장하세요.</label>

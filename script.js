@@ -22,6 +22,7 @@ const saveRankButton = document.getElementById('saveRankButton');
 const rankHelp = document.getElementById('rankHelp');
 const rankingList = document.getElementById('rankingList');
 const clearRankingButton = document.getElementById('clearRankingButton');
+const bgmAudioElement = document.getElementById('bgmAudio');
 
 const STAGE_TIME = 15;
 const RANKING_KEY = 'bulletDodgeRankingV4';
@@ -114,7 +115,8 @@ function getConfig() {
 
 function initAudio() {
   if (!bgmAudio) {
-    bgmAudio = new Audio(BGM_PATH);
+    bgmAudio = bgmAudioElement || new Audio(BGM_PATH);
+    bgmAudio.src = bgmAudio.src || new URL(BGM_PATH, document.baseURI).href;
     bgmAudio.loop = true;
     bgmAudio.volume = 0.36;
     bgmAudio.preload = 'auto';
@@ -233,8 +235,11 @@ function startBgm() {
   if (!bgmAudio || isMuted) return;
 
   bgmAudio.muted = false;
-  bgmAudio.play().catch(() => {
-    // 브라우저가 자동 재생을 막는 경우 다음 사용자 입력 때 다시 시도합니다.
+  bgmAudio.play().catch((error) => {
+    console.warn('BGM 재생에 실패했습니다.', {
+      src: bgmAudio.currentSrc || bgmAudio.src,
+      error,
+    });
   });
 }
 
