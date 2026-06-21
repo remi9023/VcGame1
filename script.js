@@ -27,6 +27,8 @@ const bgmAudioElement = document.getElementById('bgmAudio');
 const STAGE_TIME = 15;
 const RANKING_KEY = 'bulletDodgeRankingV4';
 const PLAYER_KEYBOARD_SPEED = 360;
+const PLAYER_IMAGE_PATH = 'Player/Player.png';
+const PLAYER_DRAW_SIZE = 38;
 const BGM_PATH = 'sound/bgm.mp3';
 
 const stageConfigs = {
@@ -95,6 +97,8 @@ let crossTimer = 0;
 let animationId = 0;
 let finalLog = null;
 let isRankSaved = false;
+const playerImage = new Image();
+playerImage.src = PLAYER_IMAGE_PATH;
 const keyboardInput = {
   up: false,
   down: false,
@@ -422,10 +426,10 @@ function isTextInputTarget(target) {
 }
 
 function setKeyboardInput(code, isPressed) {
-  if (code === 'KeyW') keyboardInput.up = isPressed;
-  else if (code === 'KeyS') keyboardInput.down = isPressed;
-  else if (code === 'KeyA') keyboardInput.left = isPressed;
-  else if (code === 'KeyD') keyboardInput.right = isPressed;
+  if (code === 'KeyW' || code === 'ArrowUp') keyboardInput.up = isPressed;
+  else if (code === 'KeyS' || code === 'ArrowDown') keyboardInput.down = isPressed;
+  else if (code === 'KeyA' || code === 'ArrowLeft') keyboardInput.left = isPressed;
+  else if (code === 'KeyD' || code === 'ArrowRight') keyboardInput.right = isPressed;
   else return false;
 
   return true;
@@ -920,14 +924,26 @@ function drawPlayer() {
 
   ctx.shadowBlur = 22;
   ctx.shadowColor = 'rgba(255, 255, 255, 0.85)';
-  ctx.fillStyle = '#ffffff';
-  ctx.beginPath();
-  ctx.moveTo(0, -player.radius - 4);
-  ctx.lineTo(player.radius + 5, player.radius + 6);
-  ctx.lineTo(0, player.radius);
-  ctx.lineTo(-player.radius - 5, player.radius + 6);
-  ctx.closePath();
-  ctx.fill();
+  if (playerImage.complete && playerImage.naturalWidth > 0) {
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(
+      playerImage,
+      -PLAYER_DRAW_SIZE / 2,
+      -PLAYER_DRAW_SIZE / 2,
+      PLAYER_DRAW_SIZE,
+      PLAYER_DRAW_SIZE
+    );
+    ctx.imageSmoothingEnabled = true;
+  } else {
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.moveTo(0, -player.radius - 4);
+    ctx.lineTo(player.radius + 5, player.radius + 6);
+    ctx.lineTo(0, player.radius);
+    ctx.lineTo(-player.radius - 5, player.radius + 6);
+    ctx.closePath();
+    ctx.fill();
+  }
 
   ctx.shadowBlur = 0;
   ctx.fillStyle = '#ff5fb7';
