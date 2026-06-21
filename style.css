@@ -452,3 +452,25 @@ canvas {
     flex-direction: column;
   }
 }
+
+/* 랭킹 목록이 비어 있을 때 안내 문구가 세로로 깨져 보이는 문제 수정 */
+.ranking-list li.empty-rank {
+  display: block;
+  grid-template-columns: none;
+  width: 100%;
+  padding: 24px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.09);
+  color: #9da9c9;
+  text-align: center;
+  line-height: 1.7;
+  word-break: keep-all;
+  white-space: normal;
+}
+
+.ranking-list li > div {
+  min-width: 0;
+}
+
+.ranking-note {
+  word-break: keep-all;
+}
