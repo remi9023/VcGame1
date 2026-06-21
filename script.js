@@ -5,13 +5,17 @@ const stageText = document.getElementById('stageText');
 const timeText = document.getElementById('timeText');
 const scoreText = document.getElementById('scoreText');
 const grazeText = document.getElementById('grazeText');
+const modeIndicator = document.getElementById('modeIndicator');
+const soundIndicator = document.getElementById('soundIndicator');
+
 const overlay = document.getElementById('overlay');
 const panelKicker = document.getElementById('panelKicker');
 const panelTitle = document.getElementById('panelTitle');
 const panelText = document.getElementById('panelText');
 const startButton = document.getElementById('startButton');
 const muteButton = document.getElementById('muteButton');
-const soundIndicator = document.getElementById('soundIndicator');
+const finishRunButton = document.getElementById('finishRunButton');
+
 const rankForm = document.getElementById('rankForm');
 const nicknameInput = document.getElementById('nicknameInput');
 const saveRankButton = document.getElementById('saveRankButton');
@@ -19,196 +23,374 @@ const rankHelp = document.getElementById('rankHelp');
 const rankingList = document.getElementById('rankingList');
 const clearRankingButton = document.getElementById('clearRankingButton');
 
-const STAGES = [
-  {
-    level: 1,
-    name: '1단계',
-    duration: 15,
-    label: '입문 탄막',
-    patternInterval: 1.05,
-    aimedInterval: 1.25,
-    speedScale: 0.9,
-    circleCount: 12,
-    patterns: ['circle', 'aimed'],
-  },
-  {
-    level: 2,
-    name: '2단계',
-    duration: 20,
-    label: '압박 탄막',
-    patternInterval: 0.82,
-    aimedInterval: 0.95,
-    speedScale: 1.12,
-    circleCount: 16,
-    patterns: ['circle', 'spiral', 'wall', 'aimed'],
-  },
-  {
-    level: 3,
-    name: '3단계',
-    duration: 25,
-    label: '최종 탄막',
-    patternInterval: 0.58,
-    aimedInterval: 0.68,
-    speedScale: 1.35,
-    circleCount: 20,
-    patterns: ['circle', 'spiral', 'wall', 'rain', 'cross', 'aimed'],
-  },
-];
+const STAGE_TIME = 15;
+const RANKING_KEY = 'bulletDodgeRankingV4';
 
-const RANKING_KEY = 'bullet-dodge-ranking-stage-v1';
-const MAX_RANKING = 10;
+const stageConfigs = {
+  1: {
+    label: 'STAGE 1',
+    bodyMode: 'stage1',
+    spawnInterval: 1.05,
+    aimedInterval: 0.72,
+    speed: 1,
+    scorePerSecond: 100,
+    starColor: 'rgba(210, 224, 255, 0.78)',
+    coreColor: '#111a3c',
+    edgeColor: '#040611',
+  },
+  2: {
+    label: 'STAGE 2',
+    bodyMode: 'stage2',
+    spawnInterval: 0.86,
+    aimedInterval: 0.58,
+    speed: 1.18,
+    scorePerSecond: 170,
+    starColor: 'rgba(223, 190, 255, 0.78)',
+    coreColor: '#23154e',
+    edgeColor: '#050614',
+  },
+  3: {
+    label: 'STAGE 3',
+    bodyMode: 'stage3',
+    spawnInterval: 0.68,
+    aimedInterval: 0.46,
+    speed: 1.36,
+    scorePerSecond: 260,
+    starColor: 'rgba(255, 207, 206, 0.8)',
+    coreColor: '#3c1022',
+    edgeColor: '#07030a',
+  },
+  endless: {
+    label: 'ENDLESS',
+    bodyMode: 'endless',
+    spawnInterval: 0.52,
+    aimedInterval: 0.36,
+    speed: 1.48,
+    scorePerSecond: 360,
+    starColor: 'rgba(214, 252, 255, 0.82)',
+    coreColor: '#102535',
+    edgeColor: '#02030a',
+  },
+};
 
 let gameState = 'ready';
 let player;
 let bullets = [];
 let particles = [];
 let stars = [];
-let stageIndex = 0;
+let currentStage = 1;
 let stageElapsed = 0;
 let totalElapsed = 0;
-let patternTimer = 0;
-let aimedTimer = 0;
+let endlessElapsed = 0;
 let score = 0;
 let grazeCount = 0;
 let lastTime = 0;
-let animationId = null;
-let stageBannerText = '';
-let stageBannerTimer = 0;
-let lastRunData = null;
-let savedCurrentRun = false;
-let lastShotSoundAt = 0;
+let patternTimer = 0;
+let aimedTimer = 0;
+let rainTimer = 0;
+let crossTimer = 0;
+let animationId = 0;
+let finalLog = null;
+let isRankSaved = false;
 
-let audioCtx = null;
+let audioContext = null;
 let masterGain = null;
-let bgmOscA = null;
-let bgmOscB = null;
-let bgmGain = null;
 let isMuted = false;
+let bgmOscillator = null;
+let bgmGain = null;
+let shotSoundCooldown = 0;
+let grazeSoundCooldown = 0;
 
-function getCurrentStage() {
-  return STAGES[stageIndex];
+function getConfig() {
+  return currentStage === 'endless' ? stageConfigs.endless : stageConfigs[currentStage];
+}
+
+function initAudio() {
+  if (audioContext) return;
+
+  const AudioContext = window.AudioContext || window.webkitAudioContext;
+  audioContext = new AudioContext();
+  masterGain = audioContext.createGain();
+  masterGain.gain.value = isMuted ? 0 : 0.36;
+  masterGain.connect(audioContext.destination);
+}
+
+function resumeAudio() {
+  if (!audioContext) return;
+  if (audioContext.state === 'suspended') {
+    audioContext.resume();
+  }
+}
+
+function createTone(frequency, duration, type = 'sine', volume = 0.18, startTime = 0, slideTo = null) {
+  if (!audioContext || isMuted) return;
+
+  const now = audioContext.currentTime + startTime;
+  const oscillator = audioContext.createOscillator();
+  const gain = audioContext.createGain();
+
+  oscillator.type = type;
+  oscillator.frequency.setValueAtTime(frequency, now);
+  if (slideTo) {
+    oscillator.frequency.exponentialRampToValueAtTime(slideTo, now + duration);
+  }
+
+  gain.gain.setValueAtTime(0.0001, now);
+  gain.gain.exponentialRampToValueAtTime(volume, now + 0.015);
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+
+  oscillator.connect(gain);
+  gain.connect(masterGain);
+  oscillator.start(now);
+  oscillator.stop(now + duration + 0.02);
+}
+
+function createNoise(duration, volume = 0.18, startTime = 0) {
+  if (!audioContext || isMuted) return;
+
+  const now = audioContext.currentTime + startTime;
+  const bufferSize = Math.max(1, Math.floor(audioContext.sampleRate * duration));
+  const buffer = audioContext.createBuffer(1, bufferSize, audioContext.sampleRate);
+  const data = buffer.getChannelData(0);
+
+  for (let i = 0; i < bufferSize; i++) {
+    data[i] = Math.random() * 2 - 1;
+  }
+
+  const source = audioContext.createBufferSource();
+  const gain = audioContext.createGain();
+  const filter = audioContext.createBiquadFilter();
+
+  filter.type = 'highpass';
+  filter.frequency.value = 520;
+  gain.gain.setValueAtTime(volume, now);
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+
+  source.buffer = buffer;
+  source.connect(filter);
+  filter.connect(gain);
+  gain.connect(masterGain);
+  source.start(now);
+  source.stop(now + duration);
+}
+
+function playStartSound() {
+  createTone(330, 0.12, 'triangle', 0.14, 0, 660);
+  createTone(660, 0.16, 'triangle', 0.14, 0.12, 990);
+}
+
+function playShotSound() {
+  if (shotSoundCooldown > 0) return;
+  shotSoundCooldown = 0.12;
+  createTone(980, 0.06, 'square', 0.035, 0, 520);
+}
+
+function playGrazeSound() {
+  if (grazeSoundCooldown > 0) return;
+  grazeSoundCooldown = 0.08;
+  createTone(1320, 0.05, 'sine', 0.045, 0, 1680);
+}
+
+function playStageUpSound() {
+  createTone(440, 0.12, 'triangle', 0.12, 0, 660);
+  createTone(660, 0.12, 'triangle', 0.12, 0.11, 880);
+  createTone(880, 0.22, 'triangle', 0.12, 0.22, 1320);
+}
+
+function playEnterEndlessSound() {
+  createTone(220, 0.15, 'sawtooth', 0.08, 0, 440);
+  createTone(440, 0.15, 'sawtooth', 0.08, 0.12, 880);
+  createTone(880, 0.35, 'triangle', 0.13, 0.25, 1760);
+  createNoise(0.28, 0.08, 0.22);
+}
+
+function playDefeatEndingSound() {
+  createNoise(0.35, 0.18, 0);
+  createTone(240, 0.22, 'sawtooth', 0.16, 0, 120);
+  createTone(120, 0.36, 'triangle', 0.13, 0.22, 60);
+}
+
+function playFinishRunSound() {
+  createTone(520, 0.16, 'triangle', 0.1, 0, 620);
+  createTone(720, 0.22, 'sine', 0.1, 0.14, 920);
+}
+
+function startBgm() {
+  if (!audioContext || isMuted || bgmOscillator) return;
+
+  bgmOscillator = audioContext.createOscillator();
+  bgmGain = audioContext.createGain();
+
+  bgmOscillator.type = 'sine';
+  bgmOscillator.frequency.value = 55;
+  bgmGain.gain.value = 0.025;
+
+  bgmOscillator.connect(bgmGain);
+  bgmGain.connect(masterGain);
+  bgmOscillator.start();
+}
+
+function stopBgm() {
+  if (!bgmOscillator) return;
+
+  try {
+    bgmOscillator.stop();
+  } catch (error) {
+    // 이미 정지된 경우 무시합니다.
+  }
+
+  bgmOscillator.disconnect();
+  bgmGain.disconnect();
+  bgmOscillator = null;
+  bgmGain = null;
+}
+
+function updateSoundUi() {
+  soundIndicator.textContent = isMuted ? 'SOUND OFF' : 'SOUND ON';
+  muteButton.textContent = isMuted ? '사운드 켜기' : '사운드 끄기';
+
+  if (masterGain) {
+    masterGain.gain.value = isMuted ? 0 : 0.36;
+  }
+
+  if (isMuted) {
+    stopBgm();
+  } else if (gameState === 'playing') {
+    startBgm();
+  }
+}
+
+function toggleMute() {
+  initAudio();
+  resumeAudio();
+  isMuted = !isMuted;
+  updateSoundUi();
 }
 
 function resetGame() {
   player = {
     x: canvas.width / 2,
-    y: canvas.height - 82,
-    radius: 12,
+    y: canvas.height - 86,
+    radius: 11,
     hitRadius: 6,
+    grazeRadius: 28,
     targetX: canvas.width / 2,
-    targetY: canvas.height - 82,
-    invincibleTime: 1.2,
+    targetY: canvas.height - 86,
+    invincibleTime: 1.15,
   };
 
   bullets = [];
   particles = [];
-  stageIndex = 0;
+  currentStage = 1;
   stageElapsed = 0;
   totalElapsed = 0;
-  patternTimer = 0;
-  aimedTimer = 0;
+  endlessElapsed = 0;
   score = 0;
   grazeCount = 0;
   lastTime = 0;
-  stageBannerText = '1단계 시작';
-  stageBannerTimer = 1.8;
-  lastRunData = null;
-  savedCurrentRun = false;
+  patternTimer = 0;
+  aimedTimer = 0;
+  rainTimer = 0;
+  crossTimer = 0;
+  shotSoundCooldown = 0;
+  grazeSoundCooldown = 0;
+  finalLog = null;
+  isRankSaved = false;
 
-  stars = Array.from({ length: 110 }, () => ({
+  stars = Array.from({ length: 105 }, () => ({
     x: Math.random() * canvas.width,
     y: Math.random() * canvas.height,
-    size: Math.random() * 2 + 0.5,
-    speed: Math.random() * 26 + 12,
+    size: Math.random() * 2 + 0.45,
+    speed: Math.random() * 22 + 12,
+    twinkle: Math.random() * Math.PI * 2,
   }));
 
   rankForm.classList.add('hidden');
-  saveRankButton.disabled = false;
   rankHelp.textContent = '점수 기준 상위 10개 기록만 저장됩니다.';
+  nicknameInput.value = '';
+  saveRankButton.disabled = false;
+  finishRunButton.disabled = true;
+
+  updateStageUi();
   updateHud();
 }
 
 function startGame() {
-  setupAudio();
+  initAudio();
+  resumeAudio();
   resetGame();
   gameState = 'playing';
   overlay.classList.remove('active');
+  finishRunButton.disabled = false;
   startButton.textContent = '다시 시작';
   playStartSound();
   startBgm();
-
   cancelAnimationFrame(animationId);
   animationId = requestAnimationFrame(gameLoop);
 }
 
-function endGame(isWin) {
-  if (gameState === 'ended') return;
+function finishGame(resultType) {
+  if (gameState !== 'playing') return;
 
-  gameState = 'ended';
+  gameState = 'end';
   cancelAnimationFrame(animationId);
   stopBgm();
+  finishRunButton.disabled = true;
 
-  const reachedStage = getCurrentStage();
-  const resultText = isWin ? '승리' : '패배';
-
-  lastRunData = {
-    nickname: '',
-    result: resultText,
+  const stageLabel = getStageLabelForLog();
+  finalLog = {
+    result: resultType,
     score: Math.floor(score),
+    totalTime: totalElapsed,
+    stage: stageLabel,
     graze: grazeCount,
-    stage: isWin ? 3 : reachedStage.level,
-    elapsed: totalElapsed,
     date: new Date().toLocaleString('ko-KR'),
   };
 
-  if (isWin) {
-    panelKicker.textContent = 'ALL CLEAR';
-    panelTitle.textContent = '최종 승리!';
-    panelText.textContent = `3단계를 모두 돌파했습니다. 최종 점수 ${Math.floor(score)}점, Graze ${grazeCount}회입니다.`;
-    playVictoryEndingSound();
-  } else {
-    panelKicker.textContent = 'GAME OVER';
-    panelTitle.textContent = '패배!';
-    panelText.textContent = `${reachedStage.name}에서 피격되었습니다. 생존 시간 ${totalElapsed.toFixed(1)}초, 점수 ${Math.floor(score)}점입니다.`;
+  if (resultType === 'defeat') {
     playDefeatEndingSound();
+    panelKicker.textContent = 'GAME OVER';
+    panelTitle.textContent = '탄막에 피격되었습니다';
+    panelText.textContent = `${stageLabel}에서 종료되었습니다. 생존 시간 ${totalElapsed.toFixed(1)}초 / 최종 점수 ${Math.floor(score)}점`;
+  } else {
+    playFinishRunSound();
+    panelKicker.textContent = 'RUN FINISHED';
+    panelTitle.textContent = '기록을 종료했습니다';
+    panelText.textContent = `${stageLabel}까지 도달했습니다. 생존 시간 ${totalElapsed.toFixed(1)}초 / 최종 점수 ${Math.floor(score)}점`;
   }
 
-  nicknameInput.value = '';
   rankForm.classList.remove('hidden');
   overlay.classList.add('active');
+  startButton.textContent = '다시 시작';
+  nicknameInput.focus();
   updateHud();
 }
 
-function advanceStage() {
-  const currentStage = getCurrentStage();
-
-  score += currentStage.level * 500;
-
-  if (stageIndex >= STAGES.length - 1) {
-    endGame(true);
-    return;
+function getStageLabelForLog() {
+  if (currentStage === 'endless') {
+    return `무한모드 ${endlessElapsed.toFixed(1)}초`;
   }
+  return `${currentStage}단계`;
+}
 
-  stageIndex += 1;
-  stageElapsed = 0;
-  patternTimer = 0;
-  aimedTimer = 0;
-  bullets = [];
-  player.invincibleTime = 1.4;
-  stageBannerText = `${getCurrentStage().name} 시작`;
-  stageBannerTimer = 2;
-  playStageUpSound();
-  updateHud();
+function updateStageUi() {
+  const config = getConfig();
+  const label = config.label;
+  stageText.textContent = label.replace('STAGE ', 'S');
+  modeIndicator.textContent = label;
+  document.body.dataset.mode = config.bodyMode;
 }
 
 function updateHud() {
-  const currentStage = getCurrentStage();
-  const remainTime = Math.max(0, currentStage.duration - stageElapsed);
+  if (currentStage === 'endless') {
+    timeText.textContent = `${endlessElapsed.toFixed(1)}+`;
+  } else {
+    const remainTime = Math.max(0, STAGE_TIME - stageElapsed);
+    timeText.textContent = remainTime.toFixed(1);
+  }
 
-  stageText.textContent = currentStage.level;
-  timeText.textContent = remainTime.toFixed(1);
-  scoreText.textContent = Math.floor(score);
-  grazeText.textContent = grazeCount;
+  scoreText.textContent = Math.floor(score).toString();
+  grazeText.textContent = grazeCount.toString();
 }
 
 function getPointerPosition(event) {
@@ -223,8 +405,6 @@ function getPointerPosition(event) {
 }
 
 function movePlayerTo(x, y) {
-  if (!player) return;
-
   player.targetX = Math.max(player.radius, Math.min(canvas.width - player.radius, x));
   player.targetY = Math.max(player.radius, Math.min(canvas.height - player.radius, y));
 }
@@ -257,27 +437,14 @@ function createBullet(x, y, vx, vy, radius, color, glowColor) {
   });
 }
 
-function createPattern() {
-  const stage = getCurrentStage();
-  const patternName = stage.patterns[Math.floor(Math.random() * stage.patterns.length)];
-
-  if (patternName === 'circle') createCirclePattern();
-  if (patternName === 'spiral') createSpiralPattern();
-  if (patternName === 'wall') createWallPattern();
-  if (patternName === 'rain') createRainPattern();
-  if (patternName === 'cross') createCrossPattern();
-  if (patternName === 'aimed') createAimedBurst(stage.level);
-
-  playShotSound();
-}
-
 function createCirclePattern() {
-  const stage = getCurrentStage();
-  const centerX = canvas.width / 2 + Math.sin(totalElapsed * 1.2) * 90;
-  const centerY = canvas.height / 2 + Math.cos(totalElapsed * 0.9) * 50;
-  const count = stage.circleCount;
-  const speed = 95 * stage.speedScale + stage.level * 12;
-  const offset = totalElapsed * (0.6 + stage.level * 0.22);
+  const config = getConfig();
+  const centerX = canvas.width / 2;
+  const centerY = currentStage === 'endless' ? canvas.height / 2 + Math.sin(totalElapsed) * 80 : canvas.height / 2;
+  const endlessBonus = currentStage === 'endless' ? Math.min(10, Math.floor(endlessElapsed / 8)) : 0;
+  const count = Math.floor(12 + getDifficultyLevel() * 2 + endlessBonus);
+  const speed = (82 + getDifficultyLevel() * 18 + endlessBonus * 5) * config.speed;
+  const offset = totalElapsed * (0.8 + getDifficultyLevel() * 0.08);
 
   for (let i = 0; i < count; i++) {
     const angle = (Math.PI * 2 / count) * i + offset;
@@ -286,348 +453,402 @@ function createCirclePattern() {
       centerY,
       Math.cos(angle) * speed,
       Math.sin(angle) * speed,
-      stage.level === 3 ? 5.7 : 6.5,
+      6,
       '#ff6bba',
       'rgba(255, 107, 186, 0.75)'
     );
   }
+  playShotSound();
 }
 
 function createSpiralPattern() {
-  const stage = getCurrentStage();
+  const config = getConfig();
   const centerX = canvas.width / 2;
   const centerY = canvas.height / 2;
-  const arms = stage.level === 2 ? 4 : 6;
-  const speed = 112 * stage.speedScale;
+  const arms = currentStage === 1 ? 3 : currentStage === 2 ? 4 : 5;
+  const endlessBonus = currentStage === 'endless' ? Math.min(3, Math.floor(endlessElapsed / 15)) : 0;
+  const speed = (105 + getDifficultyLevel() * 16) * config.speed;
 
-  for (let i = 0; i < arms; i++) {
-    const angle = totalElapsed * (2.3 + stage.level * 0.34) + (Math.PI * 2 / arms) * i;
+  for (let i = 0; i < arms + endlessBonus; i++) {
+    const angle = totalElapsed * (3.1 + getDifficultyLevel() * 0.16) + (Math.PI * 2 / (arms + endlessBonus)) * i;
     createBullet(
       centerX,
       centerY,
       Math.cos(angle) * speed,
       Math.sin(angle) * speed,
-      5.5,
+      5,
       '#8ea2ff',
       'rgba(142, 162, 255, 0.75)'
     );
   }
+  playShotSound();
 }
 
 function createWallPattern() {
-  const stage = getCurrentStage();
+  const config = getConfig();
   const fromLeft = Math.random() > 0.5;
-  const x = fromLeft ? -24 : canvas.width + 24;
+  const x = fromLeft ? -20 : canvas.width + 20;
   const dir = fromLeft ? 1 : -1;
-  const gapY = 85 + Math.random() * (canvas.height - 170);
-  const speed = 95 * stage.speedScale + stage.level * 12;
-  const spacing = stage.level === 3 ? 28 : 34;
-  const gapSize = stage.level === 3 ? 46 : 58;
+  const gapY = 88 + Math.random() * (canvas.height - 176);
+  const speed = (86 + getDifficultyLevel() * 18) * config.speed;
+  const spacing = currentStage === 2 ? 36 : 32;
 
-  for (let y = 32; y < canvas.height; y += spacing) {
-    if (Math.abs(y - gapY) < gapSize) continue;
+  for (let y = 34; y < canvas.height; y += spacing) {
+    if (Math.abs(y - gapY) < 58) continue;
 
     createBullet(
       x,
       y,
       dir * speed,
-      Math.sin(y * 0.04 + totalElapsed) * 24,
-      6.2,
+      Math.sin(y * 0.03 + totalElapsed) * 20,
+      7,
       '#ffd166',
       'rgba(255, 209, 102, 0.75)'
     );
   }
+  playShotSound();
 }
 
 function createRainPattern() {
-  const stage = getCurrentStage();
-  const count = 7 + stage.level * 2;
-  const speed = 130 * stage.speedScale;
+  const config = getConfig();
+  const columns = currentStage === 3 ? 10 : 13;
+  const gapIndex = Math.floor(Math.random() * columns);
+  const speed = (150 + getDifficultyLevel() * 22) * config.speed;
+  const width = canvas.width / columns;
 
-  for (let i = 0; i < count; i++) {
-    const x = Math.random() * canvas.width;
-    const angle = Math.PI / 2 + (Math.random() - 0.5) * 0.42;
-
+  for (let i = 0; i < columns; i++) {
+    if (i === gapIndex) continue;
+    const x = i * width + width / 2 + (Math.random() - 0.5) * 18;
     createBullet(
       x,
-      -24,
-      Math.cos(angle) * speed,
-      Math.sin(angle) * speed,
-      5.2,
+      -20,
+      Math.sin(totalElapsed + i) * 18,
+      speed,
+      6,
       '#4df3ff',
       'rgba(77, 243, 255, 0.75)'
     );
   }
+  playShotSound();
 }
 
 function createCrossPattern() {
-  const stage = getCurrentStage();
-  const points = [
-    { x: -20, y: -20 },
-    { x: canvas.width + 20, y: -20 },
-    { x: canvas.width + 20, y: canvas.height + 20 },
-    { x: -20, y: canvas.height + 20 },
-  ];
-  const targetX = canvas.width / 2 + Math.sin(totalElapsed * 2) * 120;
-  const targetY = canvas.height / 2 + Math.cos(totalElapsed * 2) * 80;
-  const speed = 145 * stage.speedScale;
+  const config = getConfig();
+  const speed = (115 + getDifficultyLevel() * 18) * config.speed;
+  const count = currentStage === 'endless' ? 10 : 8;
 
-  points.forEach((point) => {
-    const dx = targetX - point.x;
-    const dy = targetY - point.y;
-    const distance = Math.hypot(dx, dy) || 1;
-
-    createBullet(
-      point.x,
-      point.y,
-      dx / distance * speed,
-      dy / distance * speed,
-      5.4,
-      '#b388ff',
-      'rgba(179, 136, 255, 0.75)'
-    );
-  });
-}
-
-function createAimedBurst(amount) {
-  for (let i = 0; i < amount; i++) {
-    createAimedBullet(i, amount);
+  for (let i = 0; i < count; i++) {
+    const y = 55 + i * ((canvas.height - 110) / (count - 1));
+    createBullet(-18, y, speed, 42 * Math.sin(i + totalElapsed), 5.5, '#ff4d6d', 'rgba(255, 77, 109, 0.75)');
+    createBullet(canvas.width + 18, canvas.height - y, -speed, 42 * Math.cos(i + totalElapsed), 5.5, '#ff4d6d', 'rgba(255, 77, 109, 0.75)');
   }
+  playShotSound();
 }
 
-function createAimedBullet(index = 0, total = 1) {
-  const stage = getCurrentStage();
+function createAimedBullet() {
+  const config = getConfig();
   const side = Math.floor(Math.random() * 4);
   let x;
   let y;
 
   if (side === 0) {
     x = Math.random() * canvas.width;
-    y = -24;
+    y = -20;
   } else if (side === 1) {
-    x = canvas.width + 24;
+    x = canvas.width + 20;
     y = Math.random() * canvas.height;
   } else if (side === 2) {
     x = Math.random() * canvas.width;
-    y = canvas.height + 24;
+    y = canvas.height + 20;
   } else {
-    x = -24;
+    x = -20;
     y = Math.random() * canvas.height;
   }
 
-  const spread = (index - (total - 1) / 2) * 0.13;
-  const baseAngle = Math.atan2(player.y - y, player.x - x) + spread;
-  const speed = 130 * stage.speedScale + stage.level * 14;
+  const dx = player.x - x;
+  const dy = player.y - y;
+  const distance = Math.hypot(dx, dy) || 1;
+  const speed = (116 + getDifficultyLevel() * 20) * config.speed;
 
   createBullet(
     x,
     y,
-    Math.cos(baseAngle) * speed,
-    Math.sin(baseAngle) * speed,
-    5.6,
-    '#4df3ff',
-    'rgba(77, 243, 255, 0.75)'
+    dx / distance * speed,
+    dy / distance * speed,
+    6,
+    '#ffffff',
+    'rgba(255, 255, 255, 0.75)'
   );
 }
 
+function getDifficultyLevel() {
+  if (currentStage === 'endless') {
+    return 4 + Math.min(8, endlessElapsed / 12);
+  }
+  return currentStage;
+}
+
 function createHitParticles(x, y, color = '#ffffff') {
-  for (let i = 0; i < 28; i++) {
+  for (let i = 0; i < 24; i++) {
     const angle = Math.random() * Math.PI * 2;
-    const speed = 80 + Math.random() * 220;
+    const speed = 80 + Math.random() * 210;
 
     particles.push({
       x,
       y,
       vx: Math.cos(angle) * speed,
       vy: Math.sin(angle) * speed,
-      life: 0.72,
-      maxLife: 0.72,
-      radius: 2 + Math.random() * 3.2,
+      life: 0.7,
+      maxLife: 0.7,
+      radius: 2 + Math.random() * 3,
       color,
     });
   }
 }
 
+function createStageTransitionParticles() {
+  for (let i = 0; i < 44; i++) {
+    createHitParticles(canvas.width / 2, canvas.height / 2, currentStage === 'endless' ? '#ffd166' : '#4df3ff');
+  }
+}
+
 function updateGame(deltaTime) {
-  const stage = getCurrentStage();
+  const config = getConfig();
 
   totalElapsed += deltaTime;
   stageElapsed += deltaTime;
   patternTimer += deltaTime;
   aimedTimer += deltaTime;
-  stageBannerTimer = Math.max(0, stageBannerTimer - deltaTime);
+  rainTimer += deltaTime;
+  crossTimer += deltaTime;
+  shotSoundCooldown = Math.max(0, shotSoundCooldown - deltaTime);
+  grazeSoundCooldown = Math.max(0, grazeSoundCooldown - deltaTime);
 
-  if (stageElapsed >= stage.duration) {
-    advanceStage();
+  if (currentStage === 'endless') {
+    endlessElapsed += deltaTime;
+  } else if (stageElapsed >= STAGE_TIME) {
+    goToNextStage();
     return;
   }
 
-  score += deltaTime * (15 + stage.level * 12);
-
-  if (patternTimer >= stage.patternInterval) {
-    patternTimer = 0;
-    createPattern();
-  }
-
-  if (aimedTimer >= stage.aimedInterval) {
-    aimedTimer = 0;
-    createAimedBurst(stage.level);
-    playShotSound();
-  }
-
-  player.x += (player.targetX - player.x) * Math.min(1, deltaTime * 14);
-  player.y += (player.targetY - player.y) * Math.min(1, deltaTime * 14);
   player.invincibleTime = Math.max(0, player.invincibleTime - deltaTime);
+  player.x += (player.targetX - player.x) * 0.25;
+  player.y += (player.targetY - player.y) * 0.25;
 
-  updateStars(deltaTime);
-  updateBullets(deltaTime);
-  updateParticles(deltaTime);
-  updateHud();
-}
+  const endlessScale = currentStage === 'endless' ? Math.min(0.22, endlessElapsed * 0.0025) : 0;
+  const patternInterval = Math.max(0.28, config.spawnInterval - endlessScale);
+  const aimedInterval = Math.max(0.2, config.aimedInterval - endlessScale * 0.6);
 
-function updateStars(deltaTime) {
-  const stage = getCurrentStage();
+  if (patternTimer >= patternInterval) {
+    patternTimer = 0;
+    const random = Math.random();
 
-  stars.forEach((star) => {
-    star.y += (star.speed + stage.level * 8) * deltaTime;
-
-    if (star.y > canvas.height) {
-      star.y = -5;
-      star.x = Math.random() * canvas.width;
+    if (currentStage === 1) {
+      random < 0.65 ? createCirclePattern() : createAimedBullet();
+    } else if (currentStage === 2) {
+      if (random < 0.38) createCirclePattern();
+      else if (random < 0.74) createSpiralPattern();
+      else createWallPattern();
+    } else if (currentStage === 3) {
+      if (random < 0.28) createCirclePattern();
+      else if (random < 0.55) createSpiralPattern();
+      else if (random < 0.78) createWallPattern();
+      else createRainPattern();
+    } else {
+      if (random < 0.2) createCirclePattern();
+      else if (random < 0.4) createSpiralPattern();
+      else if (random < 0.6) createWallPattern();
+      else if (random < 0.8) createRainPattern();
+      else createCrossPattern();
     }
-  });
-}
+  }
 
-function updateBullets(deltaTime) {
-  for (let i = bullets.length - 1; i >= 0; i--) {
-    const bullet = bullets[i];
+  if (aimedTimer >= aimedInterval) {
+    aimedTimer = 0;
+    createAimedBullet();
+    if (currentStage === 'endless' && endlessElapsed > 20) {
+      createAimedBullet();
+    }
+  }
+
+  if ((currentStage === 3 || currentStage === 'endless') && rainTimer >= 2.5) {
+    rainTimer = 0;
+    createRainPattern();
+  }
+
+  if (currentStage === 'endless' && crossTimer >= 4.2) {
+    crossTimer = 0;
+    createCrossPattern();
+  }
+
+  bullets.forEach((bullet) => {
     bullet.x += bullet.vx * deltaTime;
     bullet.y += bullet.vy * deltaTime;
-    bullet.rotation += deltaTime * 4;
+    bullet.rotation += deltaTime * 5;
+  });
 
-    const distance = Math.hypot(player.x - bullet.x, player.y - bullet.y);
+  bullets = bullets.filter((bullet) => {
+    return bullet.x > -90 && bullet.x < canvas.width + 90 && bullet.y > -90 && bullet.y < canvas.height + 90;
+  });
 
-    if (!bullet.grazed && distance < player.radius + bullet.radius + 22 && distance > player.hitRadius + bullet.radius) {
-      bullet.grazed = true;
-      grazeCount += 1;
-      score += 80 + getCurrentStage().level * 35;
-      createHitParticles(bullet.x, bullet.y, bullet.color);
-      playGrazeSound();
-    }
-
-    if (player.invincibleTime <= 0 && distance < player.hitRadius + bullet.radius) {
-      createHitParticles(player.x, player.y, '#ff5fb7');
-      playHitSound();
-      endGame(false);
-      return;
-    }
-
-    if (
-      bullet.x < -90 ||
-      bullet.x > canvas.width + 90 ||
-      bullet.y < -90 ||
-      bullet.y > canvas.height + 90
-    ) {
-      bullets.splice(i, 1);
-    }
-  }
-}
-
-function updateParticles(deltaTime) {
-  for (let i = particles.length - 1; i >= 0; i--) {
-    const particle = particles[i];
+  particles.forEach((particle) => {
     particle.x += particle.vx * deltaTime;
     particle.y += particle.vy * deltaTime;
     particle.vx *= 0.985;
     particle.vy *= 0.985;
     particle.life -= deltaTime;
+  });
+  particles = particles.filter((particle) => particle.life > 0);
 
-    if (particle.life <= 0) {
-      particles.splice(i, 1);
+  stars.forEach((star) => {
+    const speedBonus = currentStage === 'endless' ? Math.min(24, endlessElapsed * 0.8) : currentStage * 4;
+    star.y += (star.speed + speedBonus) * deltaTime;
+    star.twinkle += deltaTime * 2;
+    if (star.y > canvas.height + 5) {
+      star.x = Math.random() * canvas.width;
+      star.y = -8;
+      star.size = Math.random() * 2 + 0.45;
+    }
+  });
+
+  score += config.scorePerSecond * deltaTime;
+  if (currentStage === 'endless') {
+    score += endlessElapsed * 2.8 * deltaTime;
+  }
+
+  checkCollisionAndGraze();
+  updateHud();
+}
+
+function goToNextStage() {
+  if (currentStage === 1) {
+    currentStage = 2;
+    stageElapsed = 0;
+    patternTimer = 0;
+    aimedTimer = 0;
+    player.invincibleTime = 0.85;
+    bullets = bullets.slice(-20);
+    updateStageUi();
+    createStageTransitionParticles();
+    playStageUpSound();
+  } else if (currentStage === 2) {
+    currentStage = 3;
+    stageElapsed = 0;
+    patternTimer = 0;
+    aimedTimer = 0;
+    player.invincibleTime = 0.85;
+    bullets = bullets.slice(-24);
+    updateStageUi();
+    createStageTransitionParticles();
+    playStageUpSound();
+  } else if (currentStage === 3) {
+    currentStage = 'endless';
+    stageElapsed = 0;
+    endlessElapsed = 0;
+    patternTimer = 0;
+    aimedTimer = 0;
+    player.invincibleTime = 1.05;
+    bullets = bullets.slice(-28);
+    updateStageUi();
+    createStageTransitionParticles();
+    playEnterEndlessSound();
+  }
+
+  updateHud();
+}
+
+function checkCollisionAndGraze() {
+  if (player.invincibleTime > 0) return;
+
+  for (const bullet of bullets) {
+    const distance = Math.hypot(player.x - bullet.x, player.y - bullet.y);
+
+    if (distance < player.hitRadius + bullet.radius) {
+      createHitParticles(player.x, player.y, '#ff5fb7');
+      drawGame();
+      finishGame('defeat');
+      return;
+    }
+
+    if (!bullet.grazed && distance < player.grazeRadius + bullet.radius) {
+      bullet.grazed = true;
+      grazeCount += 1;
+      score += currentStage === 'endless' ? 75 : 50;
+      playGrazeSound();
     }
   }
 }
 
-function drawGame() {
-  drawBackground();
-  drawStars();
-  drawStageGuide();
-  drawBullets();
-  drawParticles();
-  drawPlayer();
-  drawStageBanner();
-}
-
 function drawBackground() {
-  const stage = getCurrentStage();
-  const gradient = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
+  const config = getConfig();
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  if (stage.level === 1) {
-    gradient.addColorStop(0, '#081026');
-    gradient.addColorStop(1, '#050712');
-  } else if (stage.level === 2) {
-    gradient.addColorStop(0, '#111034');
-    gradient.addColorStop(1, '#080716');
-  } else {
-    gradient.addColorStop(0, '#1c0b2d');
-    gradient.addColorStop(1, '#060510');
-  }
-
+  const gradient = ctx.createRadialGradient(
+    canvas.width / 2 + Math.sin(totalElapsed * 0.5) * 70,
+    canvas.height / 2 + Math.cos(totalElapsed * 0.45) * 50,
+    70,
+    canvas.width / 2,
+    canvas.height / 2,
+    650
+  );
+  gradient.addColorStop(0, config.coreColor);
+  gradient.addColorStop(1, config.edgeColor);
   ctx.fillStyle = gradient;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  ctx.save();
-  ctx.globalAlpha = 0.08 + stage.level * 0.02;
-  ctx.strokeStyle = '#ffffff';
-  ctx.lineWidth = 1;
+  drawStageNebula(config);
+  drawStageGrid();
 
-  for (let x = 0; x < canvas.width; x += 40) {
-    ctx.beginPath();
-    ctx.moveTo(x, 0);
-    ctx.lineTo(x, canvas.height);
-    ctx.stroke();
-  }
-
-  for (let y = 0; y < canvas.height; y += 40) {
-    ctx.beginPath();
-    ctx.moveTo(0, y);
-    ctx.lineTo(canvas.width, y);
-    ctx.stroke();
-  }
-
-  ctx.restore();
-}
-
-function drawStars() {
-  ctx.save();
-  ctx.fillStyle = 'rgba(220, 230, 255, 0.8)';
-
+  ctx.fillStyle = config.starColor;
   stars.forEach((star) => {
-    ctx.globalAlpha = 0.28 + star.size * 0.18;
+    ctx.globalAlpha = 0.22 + Math.abs(Math.sin(star.twinkle)) * 0.42;
     ctx.beginPath();
     ctx.arc(star.x, star.y, star.size, 0, Math.PI * 2);
     ctx.fill();
   });
-
-  ctx.restore();
+  ctx.globalAlpha = 1;
 }
 
-function drawStageGuide() {
-  const stage = getCurrentStage();
-  const progress = stageElapsed / stage.duration;
-  const barWidth = canvas.width * progress;
+function drawStageNebula(config) {
+  const time = totalElapsed;
+  const spots = currentStage === 'endless' ? 5 : currentStage + 1;
 
-  ctx.save();
-  ctx.fillStyle = 'rgba(255, 255, 255, 0.08)';
-  ctx.fillRect(0, 0, canvas.width, 7);
+  for (let i = 0; i < spots; i++) {
+    const x = canvas.width * (0.18 + i * 0.17) + Math.sin(time * 0.4 + i) * 42;
+    const y = canvas.height * (0.25 + (i % 3) * 0.22) + Math.cos(time * 0.35 + i) * 34;
+    const radius = 90 + i * 24;
+    const nebula = ctx.createRadialGradient(x, y, 5, x, y, radius);
 
-  ctx.fillStyle = stage.level === 1 ? '#8ea2ff' : stage.level === 2 ? '#ffd166' : '#ff5fb7';
-  ctx.fillRect(0, 0, barWidth, 7);
+    if (currentStage === 1) {
+      nebula.addColorStop(0, 'rgba(77, 243, 255, 0.12)');
+    } else if (currentStage === 2) {
+      nebula.addColorStop(0, 'rgba(174, 95, 255, 0.14)');
+    } else if (currentStage === 3) {
+      nebula.addColorStop(0, 'rgba(255, 95, 130, 0.15)');
+    } else {
+      nebula.addColorStop(0, i % 2 === 0 ? 'rgba(255, 209, 102, 0.14)' : 'rgba(77, 243, 255, 0.13)');
+    }
 
-  ctx.font = '700 13px Arial';
-  ctx.fillStyle = 'rgba(244, 247, 255, 0.7)';
-  ctx.fillText(`${stage.name} · ${stage.label}`, 16, 28);
-  ctx.restore();
+    nebula.addColorStop(1, 'rgba(255, 255, 255, 0)');
+    ctx.fillStyle = nebula;
+    ctx.beginPath();
+    ctx.arc(x, y, radius, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+function drawStageGrid() {
+  const alpha = currentStage === 'endless' ? 0.12 : 0.07;
+  ctx.strokeStyle = `rgba(255, 255, 255, ${alpha})`;
+  ctx.lineWidth = 1;
+
+  const offset = (totalElapsed * (currentStage === 'endless' ? 52 : 28)) % 42;
+  for (let y = -42 + offset; y < canvas.height; y += 42) {
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(canvas.width, y + 16);
+    ctx.stroke();
+  }
 }
 
 function drawBullets() {
@@ -644,122 +865,105 @@ function drawBullets() {
     ctx.fill();
 
     ctx.shadowBlur = 0;
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.65)';
-    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.72)';
+    ctx.lineWidth = 1.4;
     ctx.beginPath();
-    ctx.moveTo(-bullet.radius * 0.7, 0);
-    ctx.lineTo(bullet.radius * 0.7, 0);
+    ctx.arc(0, 0, bullet.radius * 0.48, 0, Math.PI * 2);
     ctx.stroke();
 
     ctx.restore();
   });
 }
 
-function drawParticles() {
-  particles.forEach((particle) => {
-    const alpha = particle.life / particle.maxLife;
-
-    ctx.save();
-    ctx.globalAlpha = alpha;
-    ctx.fillStyle = particle.color;
-    ctx.shadowBlur = 12;
-    ctx.shadowColor = particle.color;
-    ctx.beginPath();
-    ctx.arc(particle.x, particle.y, particle.radius * alpha, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
-  });
-}
-
 function drawPlayer() {
-  if (!player) return;
-
-  const blink = player.invincibleTime > 0 && Math.floor(totalElapsed * 12) % 2 === 0;
+  const blink = player.invincibleTime > 0 && Math.floor(player.invincibleTime * 12) % 2 === 0;
+  if (blink) return;
 
   ctx.save();
   ctx.translate(player.x, player.y);
 
-  ctx.globalAlpha = blink ? 0.48 : 1;
-  ctx.shadowBlur = 24;
-  ctx.shadowColor = 'rgba(77, 243, 255, 0.9)';
-  ctx.fillStyle = '#4df3ff';
+  ctx.shadowBlur = 22;
+  ctx.shadowColor = 'rgba(255, 255, 255, 0.85)';
+  ctx.fillStyle = '#ffffff';
   ctx.beginPath();
-  ctx.arc(0, 0, player.radius, 0, Math.PI * 2);
+  ctx.moveTo(0, -player.radius - 4);
+  ctx.lineTo(player.radius + 5, player.radius + 6);
+  ctx.lineTo(0, player.radius);
+  ctx.lineTo(-player.radius - 5, player.radius + 6);
+  ctx.closePath();
   ctx.fill();
 
   ctx.shadowBlur = 0;
-  ctx.fillStyle = '#ffffff';
+  ctx.fillStyle = '#ff5fb7';
   ctx.beginPath();
-  ctx.arc(0, 0, player.hitRadius, 0, Math.PI * 2);
+  ctx.arc(0, 1, player.hitRadius, 0, Math.PI * 2);
   ctx.fill();
 
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)';
   ctx.lineWidth = 2;
   ctx.beginPath();
-  ctx.arc(0, 0, player.radius + 8, 0, Math.PI * 2);
+  ctx.arc(0, 1, player.hitRadius + 3, 0, Math.PI * 2);
   ctx.stroke();
 
   ctx.restore();
 }
 
-function drawStageBanner() {
-  if (stageBannerTimer <= 0) return;
-
-  const alpha = Math.min(1, stageBannerTimer / 0.7);
-  const stage = getCurrentStage();
-
-  ctx.save();
-  ctx.globalAlpha = alpha;
-  ctx.textAlign = 'center';
-  ctx.fillStyle = 'rgba(5, 7, 18, 0.62)';
-  roundRect(canvas.width / 2 - 170, canvas.height / 2 - 48, 340, 96, 24);
-  ctx.fill();
-
-  ctx.fillStyle = stage.level === 1 ? '#8ea2ff' : stage.level === 2 ? '#ffd166' : '#ff5fb7';
-  ctx.font = '900 34px Arial';
-  ctx.fillText(stageBannerText, canvas.width / 2, canvas.height / 2 - 4);
-
-  ctx.fillStyle = 'rgba(244, 247, 255, 0.8)';
-  ctx.font = '700 14px Arial';
-  ctx.fillText(stage.label, canvas.width / 2, canvas.height / 2 + 24);
-  ctx.restore();
+function drawParticles() {
+  particles.forEach((particle) => {
+    const alpha = particle.life / particle.maxLife;
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = particle.color;
+    ctx.beginPath();
+    ctx.arc(particle.x, particle.y, particle.radius, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  ctx.globalAlpha = 1;
 }
 
-function roundRect(x, y, width, height, radius) {
-  ctx.beginPath();
-  ctx.moveTo(x + radius, y);
-  ctx.lineTo(x + width - radius, y);
-  ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
-  ctx.lineTo(x + width, y + height - radius);
-  ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
-  ctx.lineTo(x + radius, y + height);
-  ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
-  ctx.lineTo(x, y + radius);
-  ctx.quadraticCurveTo(x, y, x + radius, y);
-  ctx.closePath();
+function drawWarningText() {
+  ctx.textAlign = 'center';
+
+  if (gameState === 'playing' && player.invincibleTime > 0) {
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.72)';
+    ctx.font = '18px Arial';
+    ctx.fillText('무적 시간', canvas.width / 2, 36);
+  }
+
+  if (gameState === 'playing' && currentStage === 'endless') {
+    ctx.fillStyle = 'rgba(255, 209, 102, 0.86)';
+    ctx.font = 'bold 18px Arial';
+    ctx.fillText('ENDLESS MODE', canvas.width / 2, 64);
+  }
+}
+
+function drawGame() {
+  drawBackground();
+  drawBullets();
+  drawParticles();
+  drawPlayer();
+  drawWarningText();
 }
 
 function gameLoop(timestamp) {
   if (gameState !== 'playing') return;
 
-  if (!lastTime) lastTime = timestamp;
+  if (!lastTime) {
+    lastTime = timestamp;
+  }
+
   const deltaTime = Math.min((timestamp - lastTime) / 1000, 0.033);
   lastTime = timestamp;
 
   updateGame(deltaTime);
   drawGame();
 
-  if (gameState === 'playing') {
-    animationId = requestAnimationFrame(gameLoop);
-  }
+  animationId = requestAnimationFrame(gameLoop);
 }
 
 function loadRankings() {
   try {
-    const rawData = localStorage.getItem(RANKING_KEY);
-    return rawData ? JSON.parse(rawData) : [];
+    return JSON.parse(localStorage.getItem(RANKING_KEY)) || [];
   } catch (error) {
-    console.warn('랭킹 데이터를 불러오지 못했습니다.', error);
     return [];
   }
 }
@@ -768,242 +972,79 @@ function saveRankings(rankings) {
   localStorage.setItem(RANKING_KEY, JSON.stringify(rankings));
 }
 
-function addRanking(record) {
-  const rankings = loadRankings();
-  const nextRankings = [...rankings, record]
-    .sort((a, b) => {
-      if (b.score !== a.score) return b.score - a.score;
-      return b.elapsed - a.elapsed;
-    })
-    .slice(0, MAX_RANKING);
-
-  saveRankings(nextRankings);
-  renderRankings();
-}
-
 function renderRankings() {
   const rankings = loadRankings();
   rankingList.innerHTML = '';
 
   if (rankings.length === 0) {
-    const emptyItem = document.createElement('li');
-    emptyItem.className = 'empty-rank';
-    emptyItem.textContent = '아직 저장된 기록이 없습니다.';
-    rankingList.appendChild(emptyItem);
+    rankingList.innerHTML = '<li class="empty-rank">아직 기록이 없습니다.<br />첫 번째 플레이 로그를 남겨보세요.</li>';
     return;
   }
 
   rankings.forEach((rank, index) => {
-    const item = document.createElement('li');
-    const resultIcon = rank.result === '승리' ? 'CLEAR' : 'FAIL';
-
-    item.innerHTML = `
-      <div class="rank-top">
-        <span class="rank-name">#${index + 1} ${escapeHtml(rank.nickname)}</span>
-        <span class="rank-score">${rank.score}점</span>
+    const li = document.createElement('li');
+    li.innerHTML = `
+      <span class="rank-number">${index + 1}</span>
+      <div>
+        <div class="rank-main">
+          <span class="rank-name"></span>
+          <span class="rank-score">${rank.score}점</span>
+        </div>
+        <div class="rank-sub">${rank.stage} · ${rank.totalTime.toFixed(1)}초 · Graze ${rank.graze}<br />${rank.date}</div>
       </div>
-      <div class="rank-meta">${resultIcon} · ${rank.stage}단계 · ${Number(rank.elapsed).toFixed(1)}초 · Graze ${rank.graze}회<br>${rank.date}</div>
     `;
-
-    rankingList.appendChild(item);
+    li.querySelector('.rank-name').textContent = rank.nickname;
+    rankingList.appendChild(li);
   });
-}
-
-function escapeHtml(value) {
-  return String(value)
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#039;');
 }
 
 function handleRankSubmit(event) {
   event.preventDefault();
 
-  if (!lastRunData || savedCurrentRun) return;
+  if (!finalLog || isRankSaved) return;
 
-  const nickname = nicknameInput.value.trim() || 'PLAYER';
-  const record = {
-    ...lastRunData,
-    nickname: nickname.slice(0, 12),
-  };
+  const nickname = nicknameInput.value.trim() || '익명 파일럿';
+  const safeNickname = nickname.slice(0, 12);
+  const rankings = loadRankings();
 
-  addRanking(record);
-  savedCurrentRun = true;
+  rankings.push({
+    nickname: safeNickname,
+    result: finalLog.result,
+    score: finalLog.score,
+    totalTime: finalLog.totalTime,
+    stage: finalLog.stage,
+    graze: finalLog.graze,
+    date: finalLog.date,
+  });
+
+  rankings.sort((a, b) => {
+    if (b.score !== a.score) return b.score - a.score;
+    return b.totalTime - a.totalTime;
+  });
+
+  saveRankings(rankings.slice(0, 10));
+  isRankSaved = true;
   saveRankButton.disabled = true;
   rankHelp.textContent = '기록이 저장되었습니다.';
-}
-
-function clearRankings() {
-  const ok = confirm('저장된 TOP 10 기록을 모두 삭제할까요?');
-  if (!ok) return;
-
-  localStorage.removeItem(RANKING_KEY);
   renderRankings();
 }
 
-function setupAudio() {
-  if (audioCtx) {
-    if (audioCtx.state === 'suspended') audioCtx.resume();
-    return;
-  }
-
-  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-  audioCtx = new AudioContextClass();
-  masterGain = audioCtx.createGain();
-  masterGain.gain.value = isMuted ? 0 : 1;
-  masterGain.connect(audioCtx.destination);
-}
-
-function playTone(frequency, duration, type = 'sine', volume = 0.08, delay = 0) {
-  if (isMuted) return;
-  setupAudio();
-
-  const startAt = audioCtx.currentTime + delay;
-  const oscillator = audioCtx.createOscillator();
-  const gain = audioCtx.createGain();
-
-  oscillator.type = type;
-  oscillator.frequency.setValueAtTime(frequency, startAt);
-  gain.gain.setValueAtTime(0.0001, startAt);
-  gain.gain.exponentialRampToValueAtTime(volume, startAt + 0.015);
-  gain.gain.exponentialRampToValueAtTime(0.0001, startAt + duration);
-
-  oscillator.connect(gain);
-  gain.connect(masterGain);
-  oscillator.start(startAt);
-  oscillator.stop(startAt + duration + 0.04);
-}
-
-function playNoise(duration, volume = 0.07) {
-  if (isMuted) return;
-  setupAudio();
-
-  const sampleRate = audioCtx.sampleRate;
-  const bufferSize = sampleRate * duration;
-  const buffer = audioCtx.createBuffer(1, bufferSize, sampleRate);
-  const data = buffer.getChannelData(0);
-
-  for (let i = 0; i < bufferSize; i++) {
-    data[i] = (Math.random() * 2 - 1) * (1 - i / bufferSize);
-  }
-
-  const source = audioCtx.createBufferSource();
-  const gain = audioCtx.createGain();
-
-  gain.gain.value = volume;
-  source.buffer = buffer;
-  source.connect(gain);
-  gain.connect(masterGain);
-  source.start();
-}
-
-function startBgm() {
-  if (isMuted) return;
-  setupAudio();
-  stopBgm();
-
-  bgmOscA = audioCtx.createOscillator();
-  bgmOscB = audioCtx.createOscillator();
-  bgmGain = audioCtx.createGain();
-
-  bgmOscA.type = 'triangle';
-  bgmOscB.type = 'sawtooth';
-  bgmOscA.frequency.value = 55;
-  bgmOscB.frequency.value = 110;
-  bgmGain.gain.value = 0.018;
-
-  bgmOscA.connect(bgmGain);
-  bgmOscB.connect(bgmGain);
-  bgmGain.connect(masterGain);
-
-  bgmOscA.start();
-  bgmOscB.start();
-}
-
-function stopBgm() {
-  [bgmOscA, bgmOscB].forEach((oscillator) => {
-    if (!oscillator) return;
-    try {
-      oscillator.stop();
-    } catch (error) {
-      // 이미 정지된 오실레이터는 무시합니다.
-    }
-  });
-
-  bgmOscA = null;
-  bgmOscB = null;
-  bgmGain = null;
-}
-
-function playStartSound() {
-  playTone(330, 0.08, 'square', 0.08);
-  playTone(660, 0.12, 'square', 0.08, 0.08);
-}
-
-function playShotSound() {
-  const now = performance.now();
-  if (now - lastShotSoundAt < 110) return;
-  lastShotSoundAt = now;
-
-  playTone(880, 0.05, 'square', 0.025);
-}
-
-function playGrazeSound() {
-  playTone(1240, 0.05, 'triangle', 0.045);
-}
-
-function playHitSound() {
-  playNoise(0.22, 0.12);
-  playTone(120, 0.24, 'sawtooth', 0.09);
-}
-
-function playStageUpSound() {
-  playTone(440, 0.08, 'triangle', 0.07);
-  playTone(660, 0.08, 'triangle', 0.07, 0.09);
-  playTone(990, 0.16, 'triangle', 0.08, 0.18);
-}
-
-function playVictoryEndingSound() {
-  playTone(523.25, 0.12, 'triangle', 0.09);
-  playTone(659.25, 0.12, 'triangle', 0.09, 0.12);
-  playTone(783.99, 0.16, 'triangle', 0.1, 0.24);
-  playTone(1046.5, 0.32, 'triangle', 0.11, 0.42);
-}
-
-function playDefeatEndingSound() {
-  playTone(220, 0.16, 'sawtooth', 0.09);
-  playTone(174.61, 0.18, 'sawtooth', 0.08, 0.15);
-  playTone(130.81, 0.36, 'sawtooth', 0.08, 0.32);
-  playNoise(0.18, 0.07);
-}
-
-function toggleMute() {
-  isMuted = !isMuted;
-
-  if (masterGain) {
-    masterGain.gain.value = isMuted ? 0 : 1;
-  }
-
-  if (isMuted) {
-    stopBgm();
-  } else if (gameState === 'playing') {
-    setupAudio();
-    startBgm();
-  }
-
-  muteButton.textContent = isMuted ? '사운드 켜기' : '사운드 끄기';
-  soundIndicator.textContent = isMuted ? 'SOUND OFF' : 'SOUND ON';
+function clearRankings() {
+  const shouldClear = confirm('TOP 10 기록을 모두 삭제할까요?');
+  if (!shouldClear) return;
+  localStorage.removeItem(RANKING_KEY);
+  renderRankings();
 }
 
 canvas.addEventListener('mousemove', handleMouseMove);
 canvas.addEventListener('touchmove', handleTouchMove, { passive: false });
 startButton.addEventListener('click', startGame);
 muteButton.addEventListener('click', toggleMute);
+finishRunButton.addEventListener('click', () => finishGame('finish'));
 rankForm.addEventListener('submit', handleRankSubmit);
 clearRankingButton.addEventListener('click', clearRankings);
 
 resetGame();
-drawGame();
 renderRankings();
+drawGame();
+updateSoundUi();

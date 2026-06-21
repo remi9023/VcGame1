@@ -6,20 +6,20 @@
   <title>탄막 피하기 웹게임</title>
   <link rel="stylesheet" href="style.css" />
 </head>
-<body>
+<body data-mode="ready">
   <main class="page-wrap">
     <section class="game-card">
       <header class="game-header">
         <div class="title-group">
           <p class="eyebrow">BULLET DODGE</p>
           <h1>탄막 피하기</h1>
-          <p class="description">1단계부터 3단계까지 점점 거세지는 탄막을 피하고 최종 클리어에 도전하세요.</p>
+          <p class="description">1단계부터 3단계까지 15초씩 돌파한 뒤, 무한모드에서 최고 점수를 노려보세요.</p>
         </div>
 
         <div class="hud" aria-label="게임 정보">
           <div class="hud-item">
-            <span>STAGE</span>
-            <strong id="stageText">1</strong>
+            <span>MODE</span>
+            <strong id="stageText">READY</strong>
           </div>
           <div class="hud-item">
             <span>TIME</span>
@@ -40,13 +40,17 @@
         <section class="play-panel" aria-label="게임 플레이 영역">
           <div class="game-area" id="gameArea">
             <canvas id="gameCanvas" width="800" height="520" aria-label="탄막 피하기 게임 화면"></canvas>
-            <div class="sound-indicator" id="soundIndicator">SOUND ON</div>
+
+            <div class="top-badges">
+              <span class="sound-indicator" id="soundIndicator">SOUND ON</span>
+              <span class="mode-indicator" id="modeIndicator">READY</span>
+            </div>
 
             <div class="overlay active" id="overlay">
               <div class="overlay-panel">
                 <p class="panel-kicker" id="panelKicker">READY</p>
-                <h2 id="panelTitle">3단계 탄막을 돌파하세요</h2>
-                <p id="panelText">마우스로 플레이어를 움직여 탄막을 피하세요. 탄막을 스치듯 피하면 Graze 점수를 얻습니다.</p>
+                <h2 id="panelTitle">3단계 이후 무한모드에 도전하세요</h2>
+                <p id="panelText">마우스로 플레이어를 움직여 탄막을 피하세요. 1~3단계는 각 15초이며, 이후에는 무한모드로 전환됩니다.</p>
 
                 <form class="rank-form hidden" id="rankForm">
                   <label for="nicknameInput">닉네임을 입력하고 플레이 로그를 저장하세요.</label>
@@ -73,9 +77,9 @@
 
           <footer class="game-footer">
             <p><strong>조작:</strong> 마우스 이동</p>
-            <p><strong>진행:</strong> 1단계 → 2단계 → 3단계</p>
-            <p><strong>승리:</strong> 3단계까지 생존</p>
-            <p><strong>패배:</strong> 탄막 피격</p>
+            <p><strong>진행:</strong> 1단계 15초 → 2단계 15초 → 3단계 15초 → 무한모드</p>
+            <p><strong>기록:</strong> 피격되거나 기록 종료 시 TOP 10에 저장 가능</p>
+            <button type="button" class="small-button" id="finishRunButton" disabled>기록 종료</button>
           </footer>
         </section>
 
