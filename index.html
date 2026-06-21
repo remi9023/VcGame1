@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>탄막 피하기 웹게임</title>
+  <title>쥐약피하기 웹게임</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body data-mode="ready">
@@ -11,9 +11,9 @@
     <section class="game-card">
       <header class="game-header">
         <div class="title-group">
-          <p class="eyebrow">BULLET DODGE</p>
-          <h1>탄막 피하기</h1>
-          <p class="description">1단계부터 3단계까지 15초씩 돌파한 뒤, 무한모드에서 최고 점수를 노려보세요.</p>
+          <p class="eyebrow">RAT POISON DODGE</p>
+          <h1>쥐약피하기</h1>
+          <p class="description">몰려오는 쥐약을 피해 최대한 오래 생존하세요.</p>
         </div>
 
         <div class="hud" aria-label="게임 정보">
@@ -39,7 +39,7 @@
       <div class="content-grid">
         <section class="play-panel" aria-label="게임 플레이 영역">
           <div class="game-area" id="gameArea">
-            <canvas id="gameCanvas" width="800" height="520" aria-label="탄막 피하기 게임 화면"></canvas>
+            <canvas id="gameCanvas" width="800" height="520" aria-label="쥐약피하기 게임 화면"></canvas>
             <audio id="bgmAudio" src="sound/bgm.mp3" preload="auto" loop></audio>
 
             <div class="top-badges">
@@ -50,8 +50,8 @@
             <div class="overlay active" id="overlay">
               <div class="overlay-panel">
                 <p class="panel-kicker" id="panelKicker">READY</p>
-                <h2 id="panelTitle">3단계 이후 무한모드에 도전하세요</h2>
-                <p id="panelText">WASD 또는 방향키로 플레이어를 움직여 탄막을 피하세요. 1~3단계는 각 15초이며, 이후에는 무한모드로 전환됩니다.</p>
+                <h2 id="panelTitle">쥐약피하기</h2>
+                <p id="panelText">몰려오는 쥐약을 피해 최대한 오래 생존하세요. WASD 또는 방향키로 움직일 수 있습니다.</p>
 
                 <form class="rank-form hidden" id="rankForm">
                   <label for="nicknameInput">닉네임을 입력하고 플레이 로그를 저장하세요.</label>

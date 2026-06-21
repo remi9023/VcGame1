@@ -366,7 +366,7 @@ function finishGame(resultType) {
   if (resultType === 'defeat') {
     playDefeatEndingSound();
     panelKicker.textContent = 'GAME OVER';
-    panelTitle.textContent = '탄막에 피격되었습니다';
+    panelTitle.textContent = '쥐약에 닿았습니다';
     panelText.textContent = `${stageLabel}에서 종료되었습니다. 생존 시간 ${totalElapsed.toFixed(1)}초 / 최종 점수 ${Math.floor(score)}점`;
   } else {
     playFinishRunSound();
