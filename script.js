@@ -945,18 +945,6 @@ function drawPlayer() {
     ctx.fill();
   }
 
-  ctx.shadowBlur = 0;
-  ctx.fillStyle = '#ff5fb7';
-  ctx.beginPath();
-  ctx.arc(0, 1, player.hitRadius, 0, Math.PI * 2);
-  ctx.fill();
-
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)';
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.arc(0, 1, player.hitRadius + 3, 0, Math.PI * 2);
-  ctx.stroke();
-
   ctx.restore();
 }
 
