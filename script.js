@@ -25,6 +25,7 @@ const clearRankingButton = document.getElementById('clearRankingButton');
 
 const STAGE_TIME = 15;
 const RANKING_KEY = 'bulletDodgeRankingV4';
+const PLAYER_KEYBOARD_SPEED = 360;
 
 const stageConfigs = {
   1: {
@@ -92,6 +93,12 @@ let crossTimer = 0;
 let animationId = 0;
 let finalLog = null;
 let isRankSaved = false;
+const keyboardInput = {
+  up: false,
+  down: false,
+  left: false,
+  right: false,
+};
 
 let audioContext = null;
 let masterGain = null;
@@ -268,6 +275,8 @@ function toggleMute() {
 }
 
 function resetGame() {
+  resetKeyboardInput();
+
   player = {
     x: canvas.width / 2,
     y: canvas.height - 86,
@@ -393,34 +402,57 @@ function updateHud() {
   grazeText.textContent = grazeCount.toString();
 }
 
-function getPointerPosition(event) {
-  const rect = canvas.getBoundingClientRect();
-  const scaleX = canvas.width / rect.width;
-  const scaleY = canvas.height / rect.height;
-
-  return {
-    x: (event.clientX - rect.left) * scaleX,
-    y: (event.clientY - rect.top) * scaleY,
-  };
-}
-
 function movePlayerTo(x, y) {
   player.targetX = Math.max(player.radius, Math.min(canvas.width - player.radius, x));
   player.targetY = Math.max(player.radius, Math.min(canvas.height - player.radius, y));
 }
 
-function handleMouseMove(event) {
-  if (gameState !== 'playing') return;
-  const pos = getPointerPosition(event);
-  movePlayerTo(pos.x, pos.y);
+function resetKeyboardInput() {
+  keyboardInput.up = false;
+  keyboardInput.down = false;
+  keyboardInput.left = false;
+  keyboardInput.right = false;
 }
 
-function handleTouchMove(event) {
-  if (gameState !== 'playing') return;
-  event.preventDefault();
-  const touch = event.touches[0];
-  const pos = getPointerPosition(touch);
-  movePlayerTo(pos.x, pos.y);
+function isTextInputTarget(target) {
+  return target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target.isContentEditable;
+}
+
+function setKeyboardInput(code, isPressed) {
+  if (code === 'KeyW') keyboardInput.up = isPressed;
+  else if (code === 'KeyS') keyboardInput.down = isPressed;
+  else if (code === 'KeyA') keyboardInput.left = isPressed;
+  else if (code === 'KeyD') keyboardInput.right = isPressed;
+  else return false;
+
+  return true;
+}
+
+function handleKeyDown(event) {
+  if (isTextInputTarget(event.target)) return;
+  if (setKeyboardInput(event.code, true)) {
+    event.preventDefault();
+  }
+}
+
+function handleKeyUp(event) {
+  if (setKeyboardInput(event.code, false)) {
+    event.preventDefault();
+  }
+}
+
+function updateKeyboardMovement(deltaTime) {
+  const directionX = Number(keyboardInput.right) - Number(keyboardInput.left);
+  const directionY = Number(keyboardInput.down) - Number(keyboardInput.up);
+
+  if (directionX === 0 && directionY === 0) return;
+
+  const length = Math.hypot(directionX, directionY);
+  const distance = PLAYER_KEYBOARD_SPEED * deltaTime;
+  movePlayerTo(
+    player.targetX + (directionX / length) * distance,
+    player.targetY + (directionY / length) * distance
+  );
 }
 
 function createBullet(x, y, vx, vy, radius, color, glowColor) {
@@ -632,6 +664,7 @@ function updateGame(deltaTime) {
   }
 
   player.invincibleTime = Math.max(0, player.invincibleTime - deltaTime);
+  updateKeyboardMovement(deltaTime);
   player.x += (player.targetX - player.x) * 0.25;
   player.y += (player.targetY - player.y) * 0.25;
 
@@ -1036,8 +1069,8 @@ function clearRankings() {
   renderRankings();
 }
 
-canvas.addEventListener('mousemove', handleMouseMove);
-canvas.addEventListener('touchmove', handleTouchMove, { passive: false });
+window.addEventListener('keydown', handleKeyDown);
+window.addEventListener('keyup', handleKeyUp);
 startButton.addEventListener('click', startGame);
 muteButton.addEventListener('click', toggleMute);
 finishRunButton.addEventListener('click', () => finishGame('finish'));
