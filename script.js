@@ -1,5 +1,7 @@
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
+const minimapCanvas = document.createElement('canvas');
+const minimapCtx = minimapCanvas.getContext('2d');
 
 const stageText = document.getElementById('stageText');
 const timeText = document.getElementById('timeText');
@@ -30,6 +32,8 @@ const STAGE_TIME = 15;
 const RANKING_KEY = 'bulletDodgeRankingV4';
 const PLAYER_KEYBOARD_SPEED = 360;
 const PLAYER_MOBILE_SPEED = 390;
+const DIRECT_TOUCH_RADIUS = 58;
+const TOUCH_MINIMAP_VIEW_SIZE = 156;
 const PLAYER_IMAGE_PATH = 'Player/Player.png';
 const PLAYER_DRAW_SIZE = 38;
 const BGM_PATH = 'sound/bgm.mp3';
@@ -113,6 +117,12 @@ const mobileInput = {
   pointerId: null,
   x: 0,
   y: 0,
+};
+const directTouchInput = {
+  active: false,
+  pointerId: null,
+  offsetX: 0,
+  offsetY: 0,
 };
 
 function clamp(value, min, max) {
@@ -297,6 +307,7 @@ function toggleMute() {
 function resetGame() {
   resetKeyboardInput();
   resetMobileInput();
+  resetDirectTouchInput();
 
   player = {
     x: canvas.width / 2,
@@ -363,6 +374,7 @@ function finishGame(resultType) {
   if (gameState !== 'playing') return;
 
   gameState = 'end';
+  resetDirectTouchInput();
   cancelAnimationFrame(animationId);
   stopBgm();
   finishRunButton.disabled = true;
@@ -428,6 +440,14 @@ function movePlayerTo(x, y) {
   player.targetY = Math.max(player.radius, Math.min(canvas.height - player.radius, y));
 }
 
+function getCanvasPoint(clientX, clientY) {
+  const rect = canvas.getBoundingClientRect();
+  return {
+    x: ((clientX - rect.left) / rect.width) * canvas.width,
+    y: ((clientY - rect.top) / rect.height) * canvas.height,
+  };
+}
+
 function resetKeyboardInput() {
   keyboardInput.up = false;
   keyboardInput.down = false;
@@ -441,6 +461,13 @@ function resetMobileInput() {
   mobileInput.x = 0;
   mobileInput.y = 0;
   updateMobileStickThumb();
+}
+
+function resetDirectTouchInput() {
+  directTouchInput.active = false;
+  directTouchInput.pointerId = null;
+  directTouchInput.offsetX = 0;
+  directTouchInput.offsetY = 0;
 }
 
 function isTouchControlDevice() {
@@ -469,6 +496,7 @@ function syncTouchControls() {
   root.style.setProperty('--mobile-stick-offset', `${stickOffset}px`);
 
   resetMobileInput();
+  resetDirectTouchInput();
 }
 
 function getMobileStickRadius() {
@@ -538,6 +566,52 @@ function handleMobileStickRelease(event) {
   resetMobileInput();
 }
 
+function canUseDirectTouchControl() {
+  return document.documentElement.classList.contains('touch-controls') && gameState === 'playing' && player;
+}
+
+function getDirectTouchHitRadius() {
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width / (rect.width || canvas.width);
+  return clamp(52 * scaleX, DIRECT_TOUCH_RADIUS, 122);
+}
+
+function handleCanvasPointerDown(event) {
+  if (!canUseDirectTouchControl() || event.pointerType === 'mouse') return;
+
+  const point = getCanvasPoint(event.clientX, event.clientY);
+  const distanceFromPlayer = Math.hypot(point.x - player.x, point.y - player.y);
+
+  if (distanceFromPlayer > getDirectTouchHitRadius()) return;
+
+  event.preventDefault();
+  resetMobileInput();
+  directTouchInput.active = true;
+  directTouchInput.pointerId = event.pointerId;
+  directTouchInput.offsetX = player.x - point.x;
+  directTouchInput.offsetY = player.y - point.y;
+  canvas.setPointerCapture(event.pointerId);
+  movePlayerTo(point.x + directTouchInput.offsetX, point.y + directTouchInput.offsetY);
+}
+
+function handleCanvasPointerMove(event) {
+  if (!directTouchInput.active || event.pointerId !== directTouchInput.pointerId) return;
+
+  event.preventDefault();
+  const point = getCanvasPoint(event.clientX, event.clientY);
+  movePlayerTo(point.x + directTouchInput.offsetX, point.y + directTouchInput.offsetY);
+}
+
+function handleCanvasPointerRelease(event) {
+  if (!directTouchInput.active || event.pointerId !== directTouchInput.pointerId) return;
+
+  event.preventDefault();
+  if (canvas.hasPointerCapture(event.pointerId)) {
+    canvas.releasePointerCapture(event.pointerId);
+  }
+  resetDirectTouchInput();
+}
+
 function isTextInputTarget(target) {
   return target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target.isContentEditable;
 }
@@ -580,7 +654,7 @@ function updateKeyboardMovement(deltaTime) {
 }
 
 function updateMobileMovement(deltaTime) {
-  if (!mobileInput.active) return;
+  if (!mobileInput.active || directTouchInput.active) return;
 
   const length = Math.hypot(mobileInput.x, mobileInput.y);
   if (length < 0.08) return;
@@ -803,8 +877,9 @@ function updateGame(deltaTime) {
   player.invincibleTime = Math.max(0, player.invincibleTime - deltaTime);
   updateKeyboardMovement(deltaTime);
   updateMobileMovement(deltaTime);
-  player.x += (player.targetX - player.x) * 0.25;
-  player.y += (player.targetY - player.y) * 0.25;
+  const playerFollowRate = directTouchInput.active ? 0.45 : 0.25;
+  player.x += (player.targetX - player.x) * playerFollowRate;
+  player.y += (player.targetY - player.y) * playerFollowRate;
 
   const endlessScale = currentStage === 'endless' ? Math.min(0.22, endlessElapsed * 0.0025) : 0;
   const patternInterval = Math.max(0.28, config.spawnInterval - endlessScale);
@@ -1107,12 +1182,65 @@ function drawWarningText() {
   }
 }
 
+function drawDirectTouchMinimap() {
+  if (!directTouchInput.active || gameState !== 'playing' || !player) return;
+
+  const rect = canvas.getBoundingClientRect();
+  const cssShortSide = Math.min(rect.width || canvas.width, rect.height || canvas.height);
+  const isLandscape = rect.width > rect.height;
+  const cssMapSize = clamp(cssShortSide * (isLandscape ? 0.3 : 0.28), 84, 128);
+  const scaleX = canvas.width / (rect.width || canvas.width);
+  const mapSize = cssMapSize * scaleX;
+  const inset = clamp(mapSize * 0.08, 8, 14);
+  const viewSize = TOUCH_MINIMAP_VIEW_SIZE;
+  const sourceX = clamp(player.x - viewSize / 2, 0, canvas.width - viewSize);
+  const sourceY = clamp(player.y - viewSize / 2, 0, canvas.height - viewSize);
+  const centerX = inset + mapSize / 2;
+  const centerY = inset + mapSize / 2;
+
+  minimapCanvas.width = viewSize;
+  minimapCanvas.height = viewSize;
+  minimapCtx.clearRect(0, 0, viewSize, viewSize);
+  minimapCtx.drawImage(canvas, sourceX, sourceY, viewSize, viewSize, 0, 0, viewSize, viewSize);
+
+  ctx.save();
+  ctx.globalAlpha = 0.34;
+  ctx.fillStyle = '#050712';
+  ctx.fillRect(inset, inset, mapSize, mapSize);
+
+  ctx.globalAlpha = 0.62;
+  ctx.drawImage(minimapCanvas, inset, inset, mapSize, mapSize);
+
+  ctx.globalAlpha = 0.78;
+  ctx.strokeStyle = 'rgba(77, 243, 255, 0.78)';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(inset, inset, mapSize, mapSize);
+
+  ctx.globalAlpha = 0.88;
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.82)';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(centerX - 10, centerY);
+  ctx.lineTo(centerX + 10, centerY);
+  ctx.moveTo(centerX, centerY - 10);
+  ctx.lineTo(centerX, centerY + 10);
+  ctx.stroke();
+
+  ctx.globalAlpha = 0.92;
+  ctx.fillStyle = 'rgba(255, 95, 183, 0.92)';
+  ctx.beginPath();
+  ctx.arc(centerX, centerY, 4, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
 function drawGame() {
   drawBackground();
   drawBullets();
   drawParticles();
   drawPlayer();
   drawWarningText();
+  drawDirectTouchMinimap();
 }
 
 function gameLoop(timestamp) {
@@ -1220,6 +1348,10 @@ if (mobileStick) {
   mobileStick.addEventListener('pointerup', handleMobileStickRelease);
   mobileStick.addEventListener('pointercancel', handleMobileStickRelease);
 }
+canvas.addEventListener('pointerdown', handleCanvasPointerDown);
+canvas.addEventListener('pointermove', handleCanvasPointerMove);
+canvas.addEventListener('pointerup', handleCanvasPointerRelease);
+canvas.addEventListener('pointercancel', handleCanvasPointerRelease);
 startButton.addEventListener('click', startGame);
 muteButton.addEventListener('click', toggleMute);
 finishRunButton.addEventListener('click', () => finishGame('finish'));

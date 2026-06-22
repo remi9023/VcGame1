@@ -481,20 +481,17 @@ canvas {
 html.touch-controls canvas,
 body.touch-controls canvas {
   cursor: default;
+  touch-action: none;
 }
 
 html.touch-controls .mobile-stick,
 body.touch-controls .mobile-stick {
-  display: flex;
+  display: none;
 }
 
 @media (hover: none), (pointer: coarse) {
   canvas {
     cursor: default;
-  }
-
-  .mobile-stick {
-    display: flex;
   }
 }
 
