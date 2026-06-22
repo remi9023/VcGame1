@@ -23,10 +23,14 @@ const rankHelp = document.getElementById('rankHelp');
 const rankingList = document.getElementById('rankingList');
 const clearRankingButton = document.getElementById('clearRankingButton');
 const bgmAudioElement = document.getElementById('bgmAudio');
+const mobileStick = document.getElementById('mobileStick');
+const mobileStickThumb = document.getElementById('mobileStickThumb');
 
 const STAGE_TIME = 15;
 const RANKING_KEY = 'bulletDodgeRankingV4';
 const PLAYER_KEYBOARD_SPEED = 360;
+const PLAYER_MOBILE_SPEED = 390;
+const MOBILE_STICK_RADIUS = 42;
 const PLAYER_IMAGE_PATH = 'Player/Player.png';
 const PLAYER_DRAW_SIZE = 38;
 const BGM_PATH = 'sound/bgm.mp3';
@@ -104,6 +108,12 @@ const keyboardInput = {
   down: false,
   left: false,
   right: false,
+};
+const mobileInput = {
+  active: false,
+  pointerId: null,
+  x: 0,
+  y: 0,
 };
 
 let audioContext = null;
@@ -283,6 +293,7 @@ function toggleMute() {
 
 function resetGame() {
   resetKeyboardInput();
+  resetMobileInput();
 
   player = {
     x: canvas.width / 2,
@@ -421,6 +432,72 @@ function resetKeyboardInput() {
   keyboardInput.right = false;
 }
 
+function resetMobileInput() {
+  mobileInput.active = false;
+  mobileInput.pointerId = null;
+  mobileInput.x = 0;
+  mobileInput.y = 0;
+  updateMobileStickThumb();
+}
+
+function updateMobileStickThumb() {
+  if (!mobileStickThumb) return;
+  mobileStickThumb.style.transform = `translate(${mobileInput.x * MOBILE_STICK_RADIUS}px, ${mobileInput.y * MOBILE_STICK_RADIUS}px)`;
+}
+
+function updateMobileStickPosition(clientX, clientY) {
+  if (!mobileStick) return;
+
+  const rect = mobileStick.getBoundingClientRect();
+  const centerX = rect.left + rect.width / 2;
+  const centerY = rect.top + rect.height / 2;
+  const offsetX = clientX - centerX;
+  const offsetY = clientY - centerY;
+  const distance = Math.hypot(offsetX, offsetY);
+  const limitedDistance = Math.min(distance, MOBILE_STICK_RADIUS);
+
+  if (distance === 0) {
+    mobileInput.x = 0;
+    mobileInput.y = 0;
+  } else {
+    mobileInput.x = (offsetX / distance) * (limitedDistance / MOBILE_STICK_RADIUS);
+    mobileInput.y = (offsetY / distance) * (limitedDistance / MOBILE_STICK_RADIUS);
+  }
+
+  updateMobileStickThumb();
+}
+
+function handleMobileStickDown(event) {
+  if (!mobileStick) return;
+
+  event.preventDefault();
+  mobileInput.active = true;
+  mobileInput.pointerId = event.pointerId;
+  mobileStick.classList.add('active');
+  mobileStick.setPointerCapture(event.pointerId);
+  updateMobileStickPosition(event.clientX, event.clientY);
+}
+
+function handleMobileStickMove(event) {
+  if (!mobileInput.active || event.pointerId !== mobileInput.pointerId) return;
+
+  event.preventDefault();
+  updateMobileStickPosition(event.clientX, event.clientY);
+}
+
+function handleMobileStickRelease(event) {
+  if (!mobileInput.active || event.pointerId !== mobileInput.pointerId) return;
+
+  event.preventDefault();
+  if (mobileStick && mobileStick.hasPointerCapture(event.pointerId)) {
+    mobileStick.releasePointerCapture(event.pointerId);
+  }
+  if (mobileStick) {
+    mobileStick.classList.remove('active');
+  }
+  resetMobileInput();
+}
+
 function isTextInputTarget(target) {
   return target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target.isContentEditable;
 }
@@ -459,6 +536,19 @@ function updateKeyboardMovement(deltaTime) {
   movePlayerTo(
     player.targetX + (directionX / length) * distance,
     player.targetY + (directionY / length) * distance
+  );
+}
+
+function updateMobileMovement(deltaTime) {
+  if (!mobileInput.active) return;
+
+  const length = Math.hypot(mobileInput.x, mobileInput.y);
+  if (length < 0.08) return;
+
+  const distance = PLAYER_MOBILE_SPEED * length * deltaTime;
+  movePlayerTo(
+    player.targetX + (mobileInput.x / length) * distance,
+    player.targetY + (mobileInput.y / length) * distance
   );
 }
 
@@ -672,6 +762,7 @@ function updateGame(deltaTime) {
 
   player.invincibleTime = Math.max(0, player.invincibleTime - deltaTime);
   updateKeyboardMovement(deltaTime);
+  updateMobileMovement(deltaTime);
   player.x += (player.targetX - player.x) * 0.25;
   player.y += (player.targetY - player.y) * 0.25;
 
@@ -1078,6 +1169,12 @@ function clearRankings() {
 
 window.addEventListener('keydown', handleKeyDown);
 window.addEventListener('keyup', handleKeyUp);
+if (mobileStick) {
+  mobileStick.addEventListener('pointerdown', handleMobileStickDown);
+  mobileStick.addEventListener('pointermove', handleMobileStickMove);
+  mobileStick.addEventListener('pointerup', handleMobileStickRelease);
+  mobileStick.addEventListener('pointercancel', handleMobileStickRelease);
+}
 startButton.addEventListener('click', startGame);
 muteButton.addEventListener('click', toggleMute);
 finishRunButton.addEventListener('click', () => finishGame('finish'));
