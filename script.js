@@ -564,6 +564,7 @@ function handleMobileControlRelease(event) {
   if (toggle.hasPointerCapture(event.pointerId)) {
     toggle.releasePointerCapture(event.pointerId);
   }
+  setMobileToggleValue(toggle, 0);
 }
 
 function isTextInputTarget(target) {
