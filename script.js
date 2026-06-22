@@ -21,6 +21,8 @@ const finishRunButton = document.getElementById('finishRunButton');
 const rankForm = document.getElementById('rankForm');
 const nicknameInput = document.getElementById('nicknameInput');
 const saveRankButton = document.getElementById('saveRankButton');
+const rankInputRow = document.querySelector('.rank-input-row');
+const buttonRow = document.querySelector('.button-row');
 const rankHelp = document.getElementById('rankHelp');
 const rankingList = document.getElementById('rankingList');
 const clearRankingButton = document.getElementById('clearRankingButton');
@@ -308,6 +310,7 @@ function resetGame() {
   resetKeyboardInput();
   resetMobileInput();
   resetDirectTouchInput();
+  moveStartButtonToDefaultRow();
 
   player = {
     x: canvas.width / 2,
@@ -402,10 +405,25 @@ function finishGame(resultType) {
   }
 
   rankForm.classList.remove('hidden');
+  moveStartButtonToRankRow();
   overlay.classList.add('active');
   startButton.textContent = '다시 시작';
   nicknameInput.focus();
   updateHud();
+}
+
+function moveStartButtonToDefaultRow() {
+  if (!buttonRow || !startButton || startButton.parentElement === buttonRow) return;
+
+  buttonRow.insertBefore(startButton, muteButton || null);
+  startButton.classList.remove('rank-retry-button');
+}
+
+function moveStartButtonToRankRow() {
+  if (!rankInputRow || !startButton || startButton.parentElement === rankInputRow) return;
+
+  saveRankButton.insertAdjacentElement('afterend', startButton);
+  startButton.classList.add('rank-retry-button');
 }
 
 function getStageLabelForLog() {
