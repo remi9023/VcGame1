@@ -21,8 +21,7 @@ const finishRunButton = document.getElementById('finishRunButton');
 const rankForm = document.getElementById('rankForm');
 const nicknameInput = document.getElementById('nicknameInput');
 const saveRankButton = document.getElementById('saveRankButton');
-const rankInputRow = document.querySelector('.rank-input-row');
-const buttonRow = document.querySelector('.button-row');
+const rankRetryButton = document.getElementById('rankRetryButton');
 const rankHelp = document.getElementById('rankHelp');
 const rankingList = document.getElementById('rankingList');
 const clearRankingButton = document.getElementById('clearRankingButton');
@@ -310,7 +309,6 @@ function resetGame() {
   resetKeyboardInput();
   resetMobileInput();
   resetDirectTouchInput();
-  moveStartButtonToDefaultRow();
 
   player = {
     x: canvas.width / 2,
@@ -353,6 +351,8 @@ function resetGame() {
   rankHelp.textContent = '점수 기준 상위 10개 기록만 저장됩니다.';
   nicknameInput.value = '';
   saveRankButton.disabled = false;
+  rankRetryButton.classList.add('hidden');
+  startButton.classList.remove('hidden');
   finishRunButton.disabled = true;
 
   updateStageUi();
@@ -405,25 +405,12 @@ function finishGame(resultType) {
   }
 
   rankForm.classList.remove('hidden');
-  moveStartButtonToRankRow();
+  rankRetryButton.classList.remove('hidden');
+  startButton.classList.add('hidden');
   overlay.classList.add('active');
   startButton.textContent = '다시 시작';
   nicknameInput.focus();
   updateHud();
-}
-
-function moveStartButtonToDefaultRow() {
-  if (!buttonRow || !startButton || startButton.parentElement === buttonRow) return;
-
-  buttonRow.insertBefore(startButton, muteButton || null);
-  startButton.classList.remove('rank-retry-button');
-}
-
-function moveStartButtonToRankRow() {
-  if (!rankInputRow || !startButton || startButton.parentElement === rankInputRow) return;
-
-  saveRankButton.insertAdjacentElement('afterend', startButton);
-  startButton.classList.add('rank-retry-button');
 }
 
 function getStageLabelForLog() {
@@ -1371,6 +1358,7 @@ canvas.addEventListener('pointermove', handleCanvasPointerMove);
 canvas.addEventListener('pointerup', handleCanvasPointerRelease);
 canvas.addEventListener('pointercancel', handleCanvasPointerRelease);
 startButton.addEventListener('click', startGame);
+rankRetryButton.addEventListener('click', startGame);
 muteButton.addEventListener('click', toggleMute);
 finishRunButton.addEventListener('click', () => finishGame('finish'));
 rankForm.addEventListener('submit', handleRankSubmit);
