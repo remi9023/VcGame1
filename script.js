@@ -115,6 +115,10 @@ const mobileInput = {
   y: 0,
 };
 
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
 let audioContext = null;
 let masterGain = null;
 let isMuted = false;
@@ -437,6 +441,34 @@ function resetMobileInput() {
   mobileInput.x = 0;
   mobileInput.y = 0;
   updateMobileStickThumb();
+}
+
+function isTouchControlDevice() {
+  return (
+    navigator.maxTouchPoints > 0 ||
+    navigator.msMaxTouchPoints > 0 ||
+    (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) ||
+    'ontouchstart' in window
+  );
+}
+
+function syncTouchControls() {
+  const root = document.documentElement;
+  const shouldUseTouchControls = isTouchControlDevice();
+  const viewport = window.visualViewport || window;
+  const viewportWidth = viewport.width || window.innerWidth || document.documentElement.clientWidth;
+  const viewportHeight = viewport.height || window.innerHeight || document.documentElement.clientHeight;
+  const shortSide = Math.min(viewportWidth, viewportHeight);
+  const isLandscape = viewportWidth > viewportHeight;
+  const stickSize = clamp(shortSide * (isLandscape ? 0.16 : 0.17), 54, 92);
+  const stickOffset = clamp(shortSide * 0.022, 8, 16);
+
+  root.classList.toggle('touch-controls', shouldUseTouchControls);
+  document.body.classList.toggle('touch-controls', shouldUseTouchControls);
+  root.style.setProperty('--mobile-stick-size', `${stickSize}px`);
+  root.style.setProperty('--mobile-stick-offset', `${stickOffset}px`);
+
+  resetMobileInput();
 }
 
 function getMobileStickRadius() {
@@ -1177,6 +1209,11 @@ function clearRankings() {
 
 window.addEventListener('keydown', handleKeyDown);
 window.addEventListener('keyup', handleKeyUp);
+window.addEventListener('resize', syncTouchControls);
+window.addEventListener('orientationchange', syncTouchControls);
+if (window.visualViewport) {
+  window.visualViewport.addEventListener('resize', syncTouchControls);
+}
 if (mobileStick) {
   mobileStick.addEventListener('pointerdown', handleMobileStickDown);
   mobileStick.addEventListener('pointermove', handleMobileStickMove);
@@ -1189,6 +1226,7 @@ finishRunButton.addEventListener('click', () => finishGame('finish'));
 rankForm.addEventListener('submit', handleRankSubmit);
 clearRankingButton.addEventListener('click', clearRankings);
 
+syncTouchControls();
 resetGame();
 renderRankings();
 drawGame();

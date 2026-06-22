@@ -11,6 +11,8 @@
   --pink: #ff5fb7;
   --blue: #7d8cff;
   --cyan: #4df3ff;
+  --mobile-stick-size: clamp(58px, 16vmin, 92px);
+  --mobile-stick-offset: clamp(8px, 2.2vmin, 16px);
 }
 
 body {
@@ -225,11 +227,11 @@ canvas {
 
 .mobile-stick {
   position: absolute;
-  left: 14px;
-  bottom: 14px;
+  left: var(--mobile-stick-offset);
+  bottom: var(--mobile-stick-offset);
   display: none;
-  width: 88px;
-  height: 88px;
+  width: var(--mobile-stick-size);
+  height: var(--mobile-stick-size);
   align-items: center;
   justify-content: center;
   border-radius: 999px;
@@ -252,18 +254,18 @@ canvas {
 }
 
 .mobile-stick::before {
-  width: 42px;
+  width: 48%;
   height: 2px;
 }
 
 .mobile-stick::after {
   width: 2px;
-  height: 42px;
+  height: 48%;
 }
 
 .mobile-stick-thumb {
-  width: 38px;
-  height: 38px;
+  width: 43%;
+  height: 43%;
   padding: 0;
   border-radius: 999px;
   background: linear-gradient(135deg, rgba(77, 243, 255, 0.95), rgba(255, 95, 183, 0.95));
@@ -476,6 +478,16 @@ canvas {
   }
 }
 
+html.touch-controls canvas,
+body.touch-controls canvas {
+  cursor: default;
+}
+
+html.touch-controls .mobile-stick,
+body.touch-controls .mobile-stick {
+  display: flex;
+}
+
 @media (hover: none), (pointer: coarse) {
   canvas {
     cursor: default;
@@ -514,48 +526,6 @@ canvas {
   .game-footer {
     align-items: flex-start;
     flex-direction: column;
-  }
-
-  .mobile-stick {
-    left: 12px;
-    bottom: 12px;
-    width: 82px;
-    height: 82px;
-  }
-
-  .mobile-stick::before {
-    width: 38px;
-  }
-
-  .mobile-stick::after {
-    height: 38px;
-  }
-
-  .mobile-stick-thumb {
-    width: 34px;
-    height: 34px;
-  }
-}
-
-@media (hover: none) and (orientation: landscape), (pointer: coarse) and (orientation: landscape) {
-  .mobile-stick {
-    left: 10px;
-    bottom: 10px;
-    width: 76px;
-    height: 76px;
-  }
-
-  .mobile-stick::before {
-    width: 34px;
-  }
-
-  .mobile-stick::after {
-    height: 34px;
-  }
-
-  .mobile-stick-thumb {
-    width: 32px;
-    height: 32px;
   }
 }
 
