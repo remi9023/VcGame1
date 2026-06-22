@@ -1,7 +1,5 @@
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
-const minimapCanvas = document.createElement('canvas');
-const minimapCtx = minimapCanvas.getContext('2d');
 
 const stageText = document.getElementById('stageText');
 const timeText = document.getElementById('timeText');
@@ -26,15 +24,11 @@ const rankHelp = document.getElementById('rankHelp');
 const rankingList = document.getElementById('rankingList');
 const clearRankingButton = document.getElementById('clearRankingButton');
 const bgmAudioElement = document.getElementById('bgmAudio');
-const mobileStick = document.getElementById('mobileStick');
-const mobileStickThumb = document.getElementById('mobileStickThumb');
+const mobileControlButtons = document.querySelectorAll('.mobile-control-button');
 
 const STAGE_TIME = 15;
 const RANKING_KEY = 'bulletDodgeRankingV4';
 const PLAYER_KEYBOARD_SPEED = 360;
-const PLAYER_MOBILE_SPEED = 390;
-const DIRECT_TOUCH_RADIUS = 58;
-const TOUCH_MINIMAP_VIEW_SIZE = 156;
 const PLAYER_IMAGE_PATH = 'Player/Player.png';
 const PLAYER_DRAW_SIZE = 38;
 const BGM_PATH = 'sound/bgm.mp3';
@@ -113,18 +107,7 @@ const keyboardInput = {
   left: false,
   right: false,
 };
-const mobileInput = {
-  active: false,
-  pointerId: null,
-  x: 0,
-  y: 0,
-};
-const directTouchInput = {
-  active: false,
-  pointerId: null,
-  offsetX: 0,
-  offsetY: 0,
-};
+const mobileButtonPointers = new Map();
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
@@ -307,8 +290,7 @@ function toggleMute() {
 
 function resetGame() {
   resetKeyboardInput();
-  resetMobileInput();
-  resetDirectTouchInput();
+  resetMobileButtonInput();
 
   player = {
     x: canvas.width / 2,
@@ -377,7 +359,7 @@ function finishGame(resultType) {
   if (gameState !== 'playing') return;
 
   gameState = 'end';
-  resetDirectTouchInput();
+  resetMobileButtonInput();
   cancelAnimationFrame(animationId);
   stopBgm();
   finishRunButton.disabled = true;
@@ -445,14 +427,6 @@ function movePlayerTo(x, y) {
   player.targetY = Math.max(player.radius, Math.min(canvas.height - player.radius, y));
 }
 
-function getCanvasPoint(clientX, clientY) {
-  const rect = canvas.getBoundingClientRect();
-  return {
-    x: ((clientX - rect.left) / rect.width) * canvas.width,
-    y: ((clientY - rect.top) / rect.height) * canvas.height,
-  };
-}
-
 function resetKeyboardInput() {
   keyboardInput.up = false;
   keyboardInput.down = false;
@@ -460,19 +434,19 @@ function resetKeyboardInput() {
   keyboardInput.right = false;
 }
 
-function resetMobileInput() {
-  mobileInput.active = false;
-  mobileInput.pointerId = null;
-  mobileInput.x = 0;
-  mobileInput.y = 0;
-  updateMobileStickThumb();
+function setMobileButtonInput(direction, isPressed) {
+  if (direction === 'up') keyboardInput.up = isPressed;
+  else if (direction === 'down') keyboardInput.down = isPressed;
+  else if (direction === 'left') keyboardInput.left = isPressed;
+  else if (direction === 'right') keyboardInput.right = isPressed;
 }
 
-function resetDirectTouchInput() {
-  directTouchInput.active = false;
-  directTouchInput.pointerId = null;
-  directTouchInput.offsetX = 0;
-  directTouchInput.offsetY = 0;
+function resetMobileButtonInput() {
+  mobileButtonPointers.clear();
+  mobileControlButtons.forEach((button) => {
+    button.classList.remove('active');
+    setMobileButtonInput(button.dataset.direction, false);
+  });
 }
 
 function isTouchControlDevice() {
@@ -492,129 +466,42 @@ function syncTouchControls() {
   const viewportHeight = viewport.height || window.innerHeight || document.documentElement.clientHeight;
   const shortSide = Math.min(viewportWidth, viewportHeight);
   const isLandscape = viewportWidth > viewportHeight;
-  const stickSize = clamp(shortSide * (isLandscape ? 0.16 : 0.17), 54, 92);
-  const stickOffset = clamp(shortSide * 0.022, 8, 16);
+  const buttonSize = clamp(shortSide * (isLandscape ? 0.14 : 0.13), 46, 74);
+  const buttonGap = clamp(shortSide * 0.02, 8, 14);
+  const buttonOffset = clamp(shortSide * (isLandscape ? 0.045 : 0.035), 12, 26);
 
   root.classList.toggle('touch-controls', shouldUseTouchControls);
   document.body.classList.toggle('touch-controls', shouldUseTouchControls);
-  root.style.setProperty('--mobile-stick-size', `${stickSize}px`);
-  root.style.setProperty('--mobile-stick-offset', `${stickOffset}px`);
+  root.style.setProperty('--mobile-control-size', `${buttonSize}px`);
+  root.style.setProperty('--mobile-control-gap', `${buttonGap}px`);
+  root.style.setProperty('--mobile-control-offset', `${buttonOffset}px`);
 
-  resetMobileInput();
-  resetDirectTouchInput();
+  resetMobileButtonInput();
 }
 
-function getMobileStickRadius() {
-  if (!mobileStick) return 0;
+function handleMobileControlDown(event) {
+  if (event.pointerType === 'mouse' || gameState !== 'playing') return;
 
-  const rect = mobileStick.getBoundingClientRect();
-  return Math.max(0, Math.min(rect.width, rect.height) * 0.34);
+  event.preventDefault();
+  const button = event.currentTarget;
+  const direction = button.dataset.direction;
+  mobileButtonPointers.set(event.pointerId, button);
+  button.classList.add('active');
+  button.setPointerCapture(event.pointerId);
+  setMobileButtonInput(direction, true);
 }
 
-function updateMobileStickThumb() {
-  if (!mobileStickThumb) return;
-  const radius = getMobileStickRadius();
-  mobileStickThumb.style.transform = `translate(${mobileInput.x * radius}px, ${mobileInput.y * radius}px)`;
-}
+function handleMobileControlRelease(event) {
+  const button = mobileButtonPointers.get(event.pointerId);
+  if (!button) return;
 
-function updateMobileStickPosition(clientX, clientY) {
-  if (!mobileStick) return;
-
-  const rect = mobileStick.getBoundingClientRect();
-  const stickRadius = getMobileStickRadius();
-  const centerX = rect.left + rect.width / 2;
-  const centerY = rect.top + rect.height / 2;
-  const offsetX = clientX - centerX;
-  const offsetY = clientY - centerY;
-  const distance = Math.hypot(offsetX, offsetY);
-  const limitedDistance = Math.min(distance, stickRadius);
-
-  if (distance === 0 || stickRadius === 0) {
-    mobileInput.x = 0;
-    mobileInput.y = 0;
-  } else {
-    mobileInput.x = (offsetX / distance) * (limitedDistance / stickRadius);
-    mobileInput.y = (offsetY / distance) * (limitedDistance / stickRadius);
+  event.preventDefault();
+  mobileButtonPointers.delete(event.pointerId);
+  button.classList.remove('active');
+  if (button.hasPointerCapture(event.pointerId)) {
+    button.releasePointerCapture(event.pointerId);
   }
-
-  updateMobileStickThumb();
-}
-
-function handleMobileStickDown(event) {
-  if (!mobileStick) return;
-
-  event.preventDefault();
-  mobileInput.active = true;
-  mobileInput.pointerId = event.pointerId;
-  mobileStick.classList.add('active');
-  mobileStick.setPointerCapture(event.pointerId);
-  updateMobileStickPosition(event.clientX, event.clientY);
-}
-
-function handleMobileStickMove(event) {
-  if (!mobileInput.active || event.pointerId !== mobileInput.pointerId) return;
-
-  event.preventDefault();
-  updateMobileStickPosition(event.clientX, event.clientY);
-}
-
-function handleMobileStickRelease(event) {
-  if (!mobileInput.active || event.pointerId !== mobileInput.pointerId) return;
-
-  event.preventDefault();
-  if (mobileStick && mobileStick.hasPointerCapture(event.pointerId)) {
-    mobileStick.releasePointerCapture(event.pointerId);
-  }
-  if (mobileStick) {
-    mobileStick.classList.remove('active');
-  }
-  resetMobileInput();
-}
-
-function canUseDirectTouchControl() {
-  return document.documentElement.classList.contains('touch-controls') && gameState === 'playing' && player;
-}
-
-function getDirectTouchHitRadius() {
-  const rect = canvas.getBoundingClientRect();
-  const scaleX = canvas.width / (rect.width || canvas.width);
-  return clamp(52 * scaleX, DIRECT_TOUCH_RADIUS, 122);
-}
-
-function handleCanvasPointerDown(event) {
-  if (!canUseDirectTouchControl() || event.pointerType === 'mouse') return;
-
-  const point = getCanvasPoint(event.clientX, event.clientY);
-  const distanceFromPlayer = Math.hypot(point.x - player.x, point.y - player.y);
-
-  if (distanceFromPlayer > getDirectTouchHitRadius()) return;
-
-  event.preventDefault();
-  resetMobileInput();
-  directTouchInput.active = true;
-  directTouchInput.pointerId = event.pointerId;
-  directTouchInput.offsetX = player.x - point.x;
-  directTouchInput.offsetY = player.y - point.y;
-  canvas.setPointerCapture(event.pointerId);
-  movePlayerTo(point.x + directTouchInput.offsetX, point.y + directTouchInput.offsetY);
-}
-
-function handleCanvasPointerMove(event) {
-  if (!directTouchInput.active || event.pointerId !== directTouchInput.pointerId) return;
-
-  event.preventDefault();
-  const point = getCanvasPoint(event.clientX, event.clientY);
-  movePlayerTo(point.x + directTouchInput.offsetX, point.y + directTouchInput.offsetY);
-}
-
-function handleCanvasPointerRelease(event) {
-  if (!directTouchInput.active || event.pointerId !== directTouchInput.pointerId) return;
-
-  event.preventDefault();
-  if (canvas.hasPointerCapture(event.pointerId)) {
-    canvas.releasePointerCapture(event.pointerId);
-  }
-  resetDirectTouchInput();
+  setMobileButtonInput(button.dataset.direction, false);
 }
 
 function isTextInputTarget(target) {
@@ -655,19 +542,6 @@ function updateKeyboardMovement(deltaTime) {
   movePlayerTo(
     player.targetX + (directionX / length) * distance,
     player.targetY + (directionY / length) * distance
-  );
-}
-
-function updateMobileMovement(deltaTime) {
-  if (!mobileInput.active || directTouchInput.active) return;
-
-  const length = Math.hypot(mobileInput.x, mobileInput.y);
-  if (length < 0.08) return;
-
-  const distance = PLAYER_MOBILE_SPEED * length * deltaTime;
-  movePlayerTo(
-    player.targetX + (mobileInput.x / length) * distance,
-    player.targetY + (mobileInput.y / length) * distance
   );
 }
 
@@ -881,10 +755,8 @@ function updateGame(deltaTime) {
 
   player.invincibleTime = Math.max(0, player.invincibleTime - deltaTime);
   updateKeyboardMovement(deltaTime);
-  updateMobileMovement(deltaTime);
-  const playerFollowRate = directTouchInput.active ? 0.45 : 0.25;
-  player.x += (player.targetX - player.x) * playerFollowRate;
-  player.y += (player.targetY - player.y) * playerFollowRate;
+  player.x += (player.targetX - player.x) * 0.25;
+  player.y += (player.targetY - player.y) * 0.25;
 
   const endlessScale = currentStage === 'endless' ? Math.min(0.22, endlessElapsed * 0.0025) : 0;
   const patternInterval = Math.max(0.28, config.spawnInterval - endlessScale);
@@ -1187,65 +1059,12 @@ function drawWarningText() {
   }
 }
 
-function drawDirectTouchMinimap() {
-  if (!directTouchInput.active || gameState !== 'playing' || !player) return;
-
-  const rect = canvas.getBoundingClientRect();
-  const cssShortSide = Math.min(rect.width || canvas.width, rect.height || canvas.height);
-  const isLandscape = rect.width > rect.height;
-  const cssMapSize = clamp(cssShortSide * (isLandscape ? 0.3 : 0.28), 84, 128);
-  const scaleX = canvas.width / (rect.width || canvas.width);
-  const mapSize = cssMapSize * scaleX;
-  const inset = clamp(mapSize * 0.08, 8, 14);
-  const viewSize = TOUCH_MINIMAP_VIEW_SIZE;
-  const sourceX = clamp(player.x - viewSize / 2, 0, canvas.width - viewSize);
-  const sourceY = clamp(player.y - viewSize / 2, 0, canvas.height - viewSize);
-  const centerX = inset + mapSize / 2;
-  const centerY = inset + mapSize / 2;
-
-  minimapCanvas.width = viewSize;
-  minimapCanvas.height = viewSize;
-  minimapCtx.clearRect(0, 0, viewSize, viewSize);
-  minimapCtx.drawImage(canvas, sourceX, sourceY, viewSize, viewSize, 0, 0, viewSize, viewSize);
-
-  ctx.save();
-  ctx.globalAlpha = 0.34;
-  ctx.fillStyle = '#050712';
-  ctx.fillRect(inset, inset, mapSize, mapSize);
-
-  ctx.globalAlpha = 0.62;
-  ctx.drawImage(minimapCanvas, inset, inset, mapSize, mapSize);
-
-  ctx.globalAlpha = 0.78;
-  ctx.strokeStyle = 'rgba(77, 243, 255, 0.78)';
-  ctx.lineWidth = 2;
-  ctx.strokeRect(inset, inset, mapSize, mapSize);
-
-  ctx.globalAlpha = 0.88;
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.82)';
-  ctx.lineWidth = 1.5;
-  ctx.beginPath();
-  ctx.moveTo(centerX - 10, centerY);
-  ctx.lineTo(centerX + 10, centerY);
-  ctx.moveTo(centerX, centerY - 10);
-  ctx.lineTo(centerX, centerY + 10);
-  ctx.stroke();
-
-  ctx.globalAlpha = 0.92;
-  ctx.fillStyle = 'rgba(255, 95, 183, 0.92)';
-  ctx.beginPath();
-  ctx.arc(centerX, centerY, 4, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.restore();
-}
-
 function drawGame() {
   drawBackground();
   drawBullets();
   drawParticles();
   drawPlayer();
   drawWarningText();
-  drawDirectTouchMinimap();
 }
 
 function gameLoop(timestamp) {
@@ -1342,21 +1161,21 @@ function clearRankings() {
 
 window.addEventListener('keydown', handleKeyDown);
 window.addEventListener('keyup', handleKeyUp);
+window.addEventListener('blur', resetMobileButtonInput);
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) resetMobileButtonInput();
+});
 window.addEventListener('resize', syncTouchControls);
 window.addEventListener('orientationchange', syncTouchControls);
 if (window.visualViewport) {
   window.visualViewport.addEventListener('resize', syncTouchControls);
 }
-if (mobileStick) {
-  mobileStick.addEventListener('pointerdown', handleMobileStickDown);
-  mobileStick.addEventListener('pointermove', handleMobileStickMove);
-  mobileStick.addEventListener('pointerup', handleMobileStickRelease);
-  mobileStick.addEventListener('pointercancel', handleMobileStickRelease);
-}
-canvas.addEventListener('pointerdown', handleCanvasPointerDown);
-canvas.addEventListener('pointermove', handleCanvasPointerMove);
-canvas.addEventListener('pointerup', handleCanvasPointerRelease);
-canvas.addEventListener('pointercancel', handleCanvasPointerRelease);
+mobileControlButtons.forEach((button) => {
+  button.addEventListener('pointerdown', handleMobileControlDown);
+  button.addEventListener('pointerup', handleMobileControlRelease);
+  button.addEventListener('pointercancel', handleMobileControlRelease);
+  button.addEventListener('lostpointercapture', handleMobileControlRelease);
+});
 startButton.addEventListener('click', startGame);
 rankRetryButton.addEventListener('click', startGame);
 muteButton.addEventListener('click', toggleMute);

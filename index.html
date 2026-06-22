@@ -47,8 +47,15 @@
               <span class="mode-indicator" id="modeIndicator">READY</span>
             </div>
 
-            <div class="mobile-stick" id="mobileStick" aria-label="Mobile movement control">
-              <button class="mobile-stick-thumb" id="mobileStickThumb" type="button" aria-label="Move player"></button>
+            <div class="mobile-controls" id="mobileControls" aria-label="Mobile movement controls">
+              <div class="mobile-control-group mobile-control-vertical" aria-label="Vertical movement">
+                <button class="mobile-control-button mobile-control-up" type="button" data-direction="up" aria-label="Move up"></button>
+                <button class="mobile-control-button mobile-control-down" type="button" data-direction="down" aria-label="Move down"></button>
+              </div>
+              <div class="mobile-control-group mobile-control-horizontal" aria-label="Horizontal movement">
+                <button class="mobile-control-button mobile-control-left" type="button" data-direction="left" aria-label="Move left"></button>
+                <button class="mobile-control-button mobile-control-right" type="button" data-direction="right" aria-label="Move right"></button>
+              </div>
             </div>
 
             <div class="overlay active" id="overlay">
