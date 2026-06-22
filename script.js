@@ -28,7 +28,7 @@ const mobileToggles = document.querySelectorAll('.mobile-toggle');
 
 const STAGE_TIME = 15;
 const RANKING_KEY = 'bulletDodgeRankingV4';
-const PLAYER_KEYBOARD_SPEED = 360;
+const PLAYER_KEYBOARD_SPEED = 280;
 const PLAYER_IMAGE_PATH = 'Player/Player.png';
 const PLAYER_DRAW_SIZE = 38;
 const BGM_PATH = 'sound/bgm.mp3';
@@ -431,6 +431,16 @@ function movePlayerTo(x, y) {
   player.targetY = Math.max(player.radius, Math.min(canvas.height - player.radius, y));
 }
 
+function movePlayerImmediate(x, y) {
+  const nextX = Math.max(player.radius, Math.min(canvas.width - player.radius, x));
+  const nextY = Math.max(player.radius, Math.min(canvas.height - player.radius, y));
+
+  player.x = nextX;
+  player.y = nextY;
+  player.targetX = nextX;
+  player.targetY = nextY;
+}
+
 function resetKeyboardInput() {
   keyboardInput.up = false;
   keyboardInput.down = false;
@@ -587,13 +597,17 @@ function updateKeyboardMovement(deltaTime) {
   const directionX = Number(keyboardInput.right) - Number(keyboardInput.left);
   const directionY = Number(keyboardInput.down) - Number(keyboardInput.up);
 
-  if (directionX === 0 && directionY === 0) return;
+  if (directionX === 0 && directionY === 0) {
+    player.targetX = player.x;
+    player.targetY = player.y;
+    return;
+  }
 
   const length = Math.hypot(directionX, directionY);
   const distance = PLAYER_KEYBOARD_SPEED * deltaTime;
-  movePlayerTo(
-    player.targetX + (directionX / length) * distance,
-    player.targetY + (directionY / length) * distance
+  movePlayerImmediate(
+    player.x + (directionX / length) * distance,
+    player.y + (directionY / length) * distance
   );
 }
 
@@ -807,8 +821,6 @@ function updateGame(deltaTime) {
 
   player.invincibleTime = Math.max(0, player.invincibleTime - deltaTime);
   updateKeyboardMovement(deltaTime);
-  player.x += (player.targetX - player.x) * 0.25;
-  player.y += (player.targetY - player.y) * 0.25;
 
   const endlessScale = currentStage === 'endless' ? Math.min(0.22, endlessElapsed * 0.0025) : 0;
   const patternInterval = Math.max(0.28, config.spawnInterval - endlessScale);
