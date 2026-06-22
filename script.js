@@ -24,7 +24,7 @@ const rankHelp = document.getElementById('rankHelp');
 const rankingList = document.getElementById('rankingList');
 const clearRankingButton = document.getElementById('clearRankingButton');
 const bgmAudioElement = document.getElementById('bgmAudio');
-const mobileControlButtons = document.querySelectorAll('.mobile-control-button');
+const mobileToggles = document.querySelectorAll('.mobile-toggle');
 
 const STAGE_TIME = 15;
 const RANKING_KEY = 'bulletDodgeRankingV4';
@@ -107,7 +107,11 @@ const keyboardInput = {
   left: false,
   right: false,
 };
-const mobileButtonPointers = new Map();
+const mobileTogglePointers = new Map();
+const mobileAxisInput = {
+  vertical: 0,
+  horizontal: 0,
+};
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
@@ -434,19 +438,36 @@ function resetKeyboardInput() {
   keyboardInput.right = false;
 }
 
-function setMobileButtonInput(direction, isPressed) {
-  if (direction === 'up') keyboardInput.up = isPressed;
-  else if (direction === 'down') keyboardInput.down = isPressed;
-  else if (direction === 'left') keyboardInput.left = isPressed;
-  else if (direction === 'right') keyboardInput.right = isPressed;
+function syncMobileAxisInput() {
+  keyboardInput.up = mobileAxisInput.vertical < 0;
+  keyboardInput.down = mobileAxisInput.vertical > 0;
+  keyboardInput.left = mobileAxisInput.horizontal < 0;
+  keyboardInput.right = mobileAxisInput.horizontal > 0;
+}
+
+function setMobileToggleValue(toggle, value) {
+  const axis = toggle.dataset.axis;
+
+  if (axis === 'vertical') {
+    mobileAxisInput.vertical = value;
+  } else if (axis === 'horizontal') {
+    mobileAxisInput.horizontal = value;
+  }
+
+  toggle.dataset.value = value.toString();
+  toggle.setAttribute('aria-valuenow', value.toString());
+  syncMobileAxisInput();
 }
 
 function resetMobileButtonInput() {
-  mobileButtonPointers.clear();
-  mobileControlButtons.forEach((button) => {
-    button.classList.remove('active');
-    setMobileButtonInput(button.dataset.direction, false);
+  mobileTogglePointers.clear();
+  mobileAxisInput.vertical = 0;
+  mobileAxisInput.horizontal = 0;
+  mobileToggles.forEach((toggle) => {
+    toggle.dataset.value = '0';
+    toggle.setAttribute('aria-valuenow', '0');
   });
+  syncMobileAxisInput();
 }
 
 function isTouchControlDevice() {
@@ -466,42 +487,73 @@ function syncTouchControls() {
   const viewportHeight = viewport.height || window.innerHeight || document.documentElement.clientHeight;
   const shortSide = Math.min(viewportWidth, viewportHeight);
   const isLandscape = viewportWidth > viewportHeight;
-  const buttonSize = clamp(shortSide * (isLandscape ? 0.14 : 0.13), 46, 74);
-  const buttonGap = clamp(shortSide * 0.02, 8, 14);
+  const controlSize = clamp(shortSide * (isLandscape ? 0.13 : 0.12), 48, 76);
+  const controlLength = clamp(shortSide * (isLandscape ? 0.34 : 0.32), 128, 196);
   const buttonOffset = clamp(shortSide * (isLandscape ? 0.045 : 0.035), 12, 26);
 
   root.classList.toggle('touch-controls', shouldUseTouchControls);
   document.body.classList.toggle('touch-controls', shouldUseTouchControls);
-  root.style.setProperty('--mobile-control-size', `${buttonSize}px`);
-  root.style.setProperty('--mobile-control-gap', `${buttonGap}px`);
+  root.style.setProperty('--mobile-control-size', `${controlSize}px`);
+  root.style.setProperty('--mobile-control-length', `${controlLength}px`);
   root.style.setProperty('--mobile-control-offset', `${buttonOffset}px`);
 
-  resetMobileButtonInput();
+  if (!shouldUseTouchControls) {
+    resetMobileButtonInput();
+    return;
+  }
+
+  mobileToggles.forEach((toggle) => {
+    if (!toggle.dataset.value) {
+      toggle.dataset.value = '0';
+      toggle.setAttribute('aria-valuenow', '0');
+    }
+  });
+  syncMobileAxisInput();
+}
+
+function getMobileToggleValue(toggle, clientX, clientY) {
+  const rect = toggle.getBoundingClientRect();
+  const axis = toggle.dataset.axis;
+  const ratio = axis === 'vertical'
+    ? (clientY - rect.top) / rect.height
+    : (clientX - rect.left) / rect.width;
+
+  if (ratio < 0.38) return -1;
+  if (ratio > 0.62) return 1;
+  return 0;
+}
+
+function updateMobileToggleFromPointer(toggle, event) {
+  setMobileToggleValue(toggle, getMobileToggleValue(toggle, event.clientX, event.clientY));
 }
 
 function handleMobileControlDown(event) {
   if (event.pointerType === 'mouse' || gameState !== 'playing') return;
 
   event.preventDefault();
-  const button = event.currentTarget;
-  const direction = button.dataset.direction;
-  mobileButtonPointers.set(event.pointerId, button);
-  button.classList.add('active');
-  button.setPointerCapture(event.pointerId);
-  setMobileButtonInput(direction, true);
+  const toggle = event.currentTarget;
+  mobileTogglePointers.set(event.pointerId, toggle);
+  toggle.setPointerCapture(event.pointerId);
+  updateMobileToggleFromPointer(toggle, event);
+}
+
+function handleMobileControlMove(event) {
+  const toggle = mobileTogglePointers.get(event.pointerId);
+  if (!toggle) return;
+
+  event.preventDefault();
+  updateMobileToggleFromPointer(toggle, event);
 }
 
 function handleMobileControlRelease(event) {
-  const button = mobileButtonPointers.get(event.pointerId);
-  if (!button) return;
+  const toggle = mobileTogglePointers.get(event.pointerId);
+  if (!toggle) return;
 
   event.preventDefault();
-  mobileButtonPointers.delete(event.pointerId);
-  button.classList.remove('active');
-  if (button.hasPointerCapture(event.pointerId)) {
-    button.releasePointerCapture(event.pointerId);
+  mobileTogglePointers.delete(event.pointerId);
+  if (toggle.hasPointerCapture(event.pointerId)) {
+    toggle.releasePointerCapture(event.pointerId);
   }
-  setMobileButtonInput(button.dataset.direction, false);
 }
 
 function isTextInputTarget(target) {
@@ -1170,11 +1222,12 @@ window.addEventListener('orientationchange', syncTouchControls);
 if (window.visualViewport) {
   window.visualViewport.addEventListener('resize', syncTouchControls);
 }
-mobileControlButtons.forEach((button) => {
-  button.addEventListener('pointerdown', handleMobileControlDown);
-  button.addEventListener('pointerup', handleMobileControlRelease);
-  button.addEventListener('pointercancel', handleMobileControlRelease);
-  button.addEventListener('lostpointercapture', handleMobileControlRelease);
+mobileToggles.forEach((toggle) => {
+  toggle.addEventListener('pointerdown', handleMobileControlDown);
+  toggle.addEventListener('pointermove', handleMobileControlMove);
+  toggle.addEventListener('pointerup', handleMobileControlRelease);
+  toggle.addEventListener('pointercancel', handleMobileControlRelease);
+  toggle.addEventListener('lostpointercapture', handleMobileControlRelease);
 });
 startButton.addEventListener('click', startGame);
 rankRetryButton.addEventListener('click', startGame);

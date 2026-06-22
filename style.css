@@ -11,8 +11,8 @@
   --pink: #ff5fb7;
   --blue: #7d8cff;
   --cyan: #4df3ff;
-  --mobile-control-size: clamp(48px, 13vmin, 72px);
-  --mobile-control-gap: clamp(8px, 2vmin, 14px);
+  --mobile-control-size: clamp(52px, 13vmin, 76px);
+  --mobile-control-length: clamp(132px, 34vmin, 190px);
   --mobile-control-offset: clamp(12px, 3vmin, 22px);
 }
 
@@ -236,64 +236,124 @@ canvas {
   z-index: 4;
 }
 
-.mobile-control-group {
+.mobile-toggle {
   position: absolute;
   bottom: var(--mobile-control-offset);
-  display: flex;
-  gap: var(--mobile-control-gap);
   pointer-events: auto;
   touch-action: none;
-}
-
-.mobile-control-vertical {
-  left: var(--mobile-control-offset);
-  flex-direction: column;
-}
-
-.mobile-control-horizontal {
-  right: var(--mobile-control-offset);
-  flex-direction: row;
-  align-items: flex-end;
-}
-
-.mobile-control-button {
-  position: relative;
-  width: var(--mobile-control-size);
-  height: var(--mobile-control-size);
-  padding: 0;
-  border-radius: 50%;
-  background: rgba(5, 8, 22, 0.34);
   border: 2px solid rgba(255, 84, 100, 0.82);
-  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.2);
-  opacity: 0.72;
-  touch-action: none;
+  background: rgba(5, 8, 22, 0.34);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.22);
+  opacity: 0.78;
   -webkit-tap-highlight-color: transparent;
 }
 
-.mobile-control-button::before {
+.mobile-toggle-vertical {
+  left: var(--mobile-control-offset);
+  width: var(--mobile-control-size);
+  height: var(--mobile-control-length);
+  border-radius: 999px;
+}
+
+.mobile-toggle-horizontal {
+  right: var(--mobile-control-offset);
+  width: var(--mobile-control-length);
+  height: var(--mobile-control-size);
+  border-radius: 999px;
+}
+
+.mobile-toggle::after {
   content: "";
   position: absolute;
-  inset: 24%;
+  background: rgba(255, 84, 100, 0.42);
+  border-radius: 999px;
+}
+
+.mobile-toggle-vertical::after {
+  left: 50%;
+  top: 22%;
+  width: 2px;
+  height: 56%;
+  transform: translateX(-50%);
+}
+
+.mobile-toggle-horizontal::after {
+  left: 22%;
+  top: 50%;
+  width: 56%;
+  height: 2px;
+  transform: translateY(-50%);
+}
+
+.mobile-toggle-thumb {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: calc(var(--mobile-control-size) * 0.64);
+  height: calc(var(--mobile-control-size) * 0.64);
+  border-radius: 50%;
+  background: rgba(255, 84, 100, 0.2);
+  border: 2px solid rgba(255, 84, 100, 0.92);
+  box-shadow: 0 0 22px rgba(255, 84, 100, 0.18);
+  transform: translate(-50%, -50%);
+  transition: transform 120ms ease, background 120ms ease, opacity 120ms ease;
+  z-index: 1;
+}
+
+.mobile-toggle-marker {
+  content: "";
+  position: absolute;
+  width: calc(var(--mobile-control-size) * 0.28);
+  height: calc(var(--mobile-control-size) * 0.28);
   background: rgba(255, 84, 100, 0.95);
   clip-path: polygon(50% 0, 100% 100%, 0 100%);
+  z-index: 2;
 }
 
-.mobile-control-down::before {
-  transform: rotate(180deg);
+.mobile-toggle-marker-up {
+  left: 50%;
+  top: 12%;
+  transform: translate(-50%, -50%);
 }
 
-.mobile-control-left::before {
-  transform: rotate(-90deg);
+.mobile-toggle-marker-down {
+  left: 50%;
+  bottom: 12%;
+  transform: translate(-50%, 50%) rotate(180deg);
 }
 
-.mobile-control-right::before {
-  transform: rotate(90deg);
+.mobile-toggle-marker-left {
+  left: 12%;
+  top: 50%;
+  transform: translate(-50%, -50%) rotate(-90deg);
 }
 
-.mobile-control-button.active {
+.mobile-toggle-marker-right {
+  right: 12%;
+  top: 50%;
+  transform: translate(50%, -50%) rotate(90deg);
+}
+
+.mobile-toggle[data-value="-1"],
+.mobile-toggle[data-value="1"] {
   opacity: 0.96;
-  background: rgba(255, 84, 100, 0.16);
-  transform: scale(0.96);
+  background: rgba(255, 84, 100, 0.12);
+}
+
+.mobile-toggle-vertical[data-value="-1"] .mobile-toggle-thumb {
+  transform: translate(-50%, calc(-50% - (var(--mobile-control-length) - var(--mobile-control-size)) * 0.36));
+}
+
+.mobile-toggle-vertical[data-value="1"] .mobile-toggle-thumb {
+  transform: translate(-50%, calc(-50% + (var(--mobile-control-length) - var(--mobile-control-size)) * 0.36));
+}
+
+.mobile-toggle-horizontal[data-value="-1"] .mobile-toggle-thumb {
+  transform: translate(calc(-50% - (var(--mobile-control-length) - var(--mobile-control-size)) * 0.36), -50%);
+}
+
+.mobile-toggle-horizontal[data-value="1"] .mobile-toggle-thumb {
+  transform: translate(calc(-50% + (var(--mobile-control-length) - var(--mobile-control-size)) * 0.36), -50%);
 }
 
 .overlay {
@@ -304,6 +364,7 @@ canvas {
   justify-content: center;
   padding: 22px;
   background: rgba(3, 5, 14, 0.82);
+  z-index: 6;
 }
 
 .overlay.active {

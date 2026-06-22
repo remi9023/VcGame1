@@ -48,13 +48,15 @@
             </div>
 
             <div class="mobile-controls" id="mobileControls" aria-label="Mobile movement controls">
-              <div class="mobile-control-group mobile-control-vertical" aria-label="Vertical movement">
-                <button class="mobile-control-button mobile-control-up" type="button" data-direction="up" aria-label="Move up"></button>
-                <button class="mobile-control-button mobile-control-down" type="button" data-direction="down" aria-label="Move down"></button>
+              <div class="mobile-toggle mobile-toggle-vertical" data-axis="vertical" role="slider" aria-label="Vertical movement" aria-valuemin="-1" aria-valuemax="1" aria-valuenow="0">
+                <span class="mobile-toggle-marker mobile-toggle-marker-up"></span>
+                <span class="mobile-toggle-thumb"></span>
+                <span class="mobile-toggle-marker mobile-toggle-marker-down"></span>
               </div>
-              <div class="mobile-control-group mobile-control-horizontal" aria-label="Horizontal movement">
-                <button class="mobile-control-button mobile-control-left" type="button" data-direction="left" aria-label="Move left"></button>
-                <button class="mobile-control-button mobile-control-right" type="button" data-direction="right" aria-label="Move right"></button>
+              <div class="mobile-toggle mobile-toggle-horizontal" data-axis="horizontal" role="slider" aria-label="Horizontal movement" aria-valuemin="-1" aria-valuemax="1" aria-valuenow="0">
+                <span class="mobile-toggle-marker mobile-toggle-marker-left"></span>
+                <span class="mobile-toggle-thumb"></span>
+                <span class="mobile-toggle-marker mobile-toggle-marker-right"></span>
               </div>
             </div>
 
