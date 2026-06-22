@@ -30,7 +30,6 @@ const STAGE_TIME = 15;
 const RANKING_KEY = 'bulletDodgeRankingV4';
 const PLAYER_KEYBOARD_SPEED = 360;
 const PLAYER_MOBILE_SPEED = 390;
-const MOBILE_STICK_RADIUS = 42;
 const PLAYER_IMAGE_PATH = 'Player/Player.png';
 const PLAYER_DRAW_SIZE = 38;
 const BGM_PATH = 'sound/bgm.mp3';
@@ -440,28 +439,37 @@ function resetMobileInput() {
   updateMobileStickThumb();
 }
 
+function getMobileStickRadius() {
+  if (!mobileStick) return 0;
+
+  const rect = mobileStick.getBoundingClientRect();
+  return Math.max(0, Math.min(rect.width, rect.height) * 0.34);
+}
+
 function updateMobileStickThumb() {
   if (!mobileStickThumb) return;
-  mobileStickThumb.style.transform = `translate(${mobileInput.x * MOBILE_STICK_RADIUS}px, ${mobileInput.y * MOBILE_STICK_RADIUS}px)`;
+  const radius = getMobileStickRadius();
+  mobileStickThumb.style.transform = `translate(${mobileInput.x * radius}px, ${mobileInput.y * radius}px)`;
 }
 
 function updateMobileStickPosition(clientX, clientY) {
   if (!mobileStick) return;
 
   const rect = mobileStick.getBoundingClientRect();
+  const stickRadius = getMobileStickRadius();
   const centerX = rect.left + rect.width / 2;
   const centerY = rect.top + rect.height / 2;
   const offsetX = clientX - centerX;
   const offsetY = clientY - centerY;
   const distance = Math.hypot(offsetX, offsetY);
-  const limitedDistance = Math.min(distance, MOBILE_STICK_RADIUS);
+  const limitedDistance = Math.min(distance, stickRadius);
 
-  if (distance === 0) {
+  if (distance === 0 || stickRadius === 0) {
     mobileInput.x = 0;
     mobileInput.y = 0;
   } else {
-    mobileInput.x = (offsetX / distance) * (limitedDistance / MOBILE_STICK_RADIUS);
-    mobileInput.y = (offsetY / distance) * (limitedDistance / MOBILE_STICK_RADIUS);
+    mobileInput.x = (offsetX / distance) * (limitedDistance / stickRadius);
+    mobileInput.y = (offsetY / distance) * (limitedDistance / stickRadius);
   }
 
   updateMobileStickThumb();
