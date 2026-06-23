@@ -42,9 +42,9 @@ const stageConfigs = {
   1: {
     label: 'STAGE 1',
     bodyMode: 'stage1',
-    spawnInterval: 1.05,
-    aimedInterval: 0.72,
-    speed: 1,
+    spawnInterval: 1.18,
+    aimedInterval: 0.82,
+    speed: 0.92,
     scorePerSecond: 100,
     starColor: 'rgba(210, 224, 255, 0.78)',
     coreColor: '#111a3c',
@@ -53,9 +53,9 @@ const stageConfigs = {
   2: {
     label: 'STAGE 2',
     bodyMode: 'stage2',
-    spawnInterval: 0.86,
-    aimedInterval: 0.58,
-    speed: 1.18,
+    spawnInterval: 0.98,
+    aimedInterval: 0.66,
+    speed: 1.08,
     scorePerSecond: 170,
     starColor: 'rgba(223, 190, 255, 0.78)',
     coreColor: '#23154e',
@@ -64,9 +64,9 @@ const stageConfigs = {
   3: {
     label: 'STAGE 3',
     bodyMode: 'stage3',
-    spawnInterval: 0.68,
-    aimedInterval: 0.46,
-    speed: 1.36,
+    spawnInterval: 0.78,
+    aimedInterval: 0.53,
+    speed: 1.24,
     scorePerSecond: 260,
     starColor: 'rgba(255, 207, 206, 0.8)',
     coreColor: '#3c1022',
@@ -75,9 +75,9 @@ const stageConfigs = {
   endless: {
     label: 'ENDLESS',
     bodyMode: 'endless',
-    spawnInterval: 0.52,
-    aimedInterval: 0.36,
-    speed: 1.48,
+    spawnInterval: 0.6,
+    aimedInterval: 0.42,
+    speed: 1.34,
     scorePerSecond: 360,
     starColor: 'rgba(214, 252, 255, 0.82)',
     coreColor: '#102535',
@@ -972,9 +972,9 @@ function updateGame(deltaTime) {
   player.invincibleTime = Math.max(0, player.invincibleTime - deltaTime);
   updateKeyboardMovement(deltaTime);
 
-  const endlessScale = currentStage === 'endless' ? Math.min(0.22, endlessElapsed * 0.0025) : 0;
-  const patternInterval = Math.max(0.28, config.spawnInterval - endlessScale);
-  const aimedInterval = Math.max(0.2, config.aimedInterval - endlessScale * 0.6);
+  const endlessScale = currentStage === 'endless' ? Math.min(0.18, endlessElapsed * 0.0021) : 0;
+  const patternInterval = Math.max(0.34, config.spawnInterval - endlessScale);
+  const aimedInterval = Math.max(0.24, config.aimedInterval - endlessScale * 0.55);
 
   if (patternTimer >= patternInterval) {
     patternTimer = 0;
@@ -1003,17 +1003,17 @@ function updateGame(deltaTime) {
   if (aimedTimer >= aimedInterval) {
     aimedTimer = 0;
     createAimedBullet();
-    if (currentStage === 'endless' && endlessElapsed > 20) {
+    if (currentStage === 'endless' && endlessElapsed > 24) {
       createAimedBullet();
     }
   }
 
-  if ((currentStage === 3 || currentStage === 'endless') && rainTimer >= 2.5) {
+  if ((currentStage === 3 || currentStage === 'endless') && rainTimer >= 2.9) {
     rainTimer = 0;
     createRainPattern();
   }
 
-  if (currentStage === 'endless' && crossTimer >= 4.2) {
+  if (currentStage === 'endless' && crossTimer >= 4.8) {
     crossTimer = 0;
     createCrossPattern();
   }
