@@ -31,6 +31,12 @@ body {
   transition: background 500ms ease;
 }
 
+html.zoom-locked,
+body.zoom-locked {
+  overscroll-behavior: none;
+  touch-action: none;
+}
+
 body[data-mode="stage2"] {
   background:
     radial-gradient(circle at 22% 22%, rgba(167, 95, 255, 0.25), transparent 30%),

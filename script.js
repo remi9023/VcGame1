@@ -25,6 +25,8 @@ const rankingList = document.getElementById('rankingList');
 const clearRankingButton = document.getElementById('clearRankingButton');
 const bgmAudioElement = document.getElementById('bgmAudio');
 const mobileToggles = document.querySelectorAll('.mobile-toggle');
+const viewportMeta = document.querySelector('meta[name="viewport"]');
+const defaultViewportContent = viewportMeta ? viewportMeta.getAttribute('content') : '';
 
 const STAGE_TIME = 15;
 const RANKING_KEY = 'bulletDodgeRankingV4';
@@ -112,9 +114,59 @@ const mobileAxisInput = {
   vertical: 0,
   horizontal: 0,
 };
+let isPageZoomLocked = false;
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
+}
+
+function setPageZoomLock(shouldLock) {
+  if (isPageZoomLocked === shouldLock) return;
+
+  isPageZoomLocked = shouldLock;
+  document.documentElement.classList.toggle('zoom-locked', shouldLock);
+  document.body.classList.toggle('zoom-locked', shouldLock);
+
+  if (!viewportMeta) return;
+
+  viewportMeta.setAttribute(
+    'content',
+    shouldLock
+      ? 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no'
+      : defaultViewportContent
+  );
+}
+
+function shouldBlockPageZoomShortcut(event) {
+  if (!isPageZoomLocked || !(event.ctrlKey || event.metaKey)) return false;
+
+  const zoomKeys = ['+', '-', '=', '0'];
+  const zoomCodes = ['Equal', 'Minus', 'Digit0', 'NumpadAdd', 'NumpadSubtract', 'Numpad0'];
+  return zoomKeys.includes(event.key) || zoomCodes.includes(event.code);
+}
+
+function preventPageZoomShortcut(event) {
+  if (shouldBlockPageZoomShortcut(event)) {
+    event.preventDefault();
+  }
+}
+
+function preventPageZoomWheel(event) {
+  if (isPageZoomLocked && event.ctrlKey) {
+    event.preventDefault();
+  }
+}
+
+function preventPageZoomGesture(event) {
+  if (isPageZoomLocked) {
+    event.preventDefault();
+  }
+}
+
+function preventPageZoomTouch(event) {
+  if (isPageZoomLocked && event.touches && event.touches.length > 1) {
+    event.preventDefault();
+  }
 }
 
 let audioContext = null;
@@ -350,6 +402,7 @@ function startGame() {
   resumeAudio();
   resetGame();
   gameState = 'playing';
+  setPageZoomLock(true);
   overlay.classList.remove('active');
   finishRunButton.disabled = false;
   startButton.textContent = '다시 시작';
@@ -363,6 +416,7 @@ function finishGame(resultType) {
   if (gameState !== 'playing') return;
 
   gameState = 'end';
+  setPageZoomLock(false);
   resetMobileButtonInput();
   cancelAnimationFrame(animationId);
   stopBgm();
@@ -1224,12 +1278,19 @@ function clearRankings() {
   renderRankings();
 }
 
+window.addEventListener('keydown', preventPageZoomShortcut, true);
 window.addEventListener('keydown', handleKeyDown);
 window.addEventListener('keyup', handleKeyUp);
 window.addEventListener('blur', resetMobileButtonInput);
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) resetMobileButtonInput();
 });
+window.addEventListener('wheel', preventPageZoomWheel, { passive: false });
+window.addEventListener('gesturestart', preventPageZoomGesture, { passive: false });
+window.addEventListener('gesturechange', preventPageZoomGesture, { passive: false });
+window.addEventListener('gestureend', preventPageZoomGesture, { passive: false });
+document.addEventListener('touchstart', preventPageZoomTouch, { passive: false });
+document.addEventListener('touchmove', preventPageZoomTouch, { passive: false });
 window.addEventListener('resize', syncTouchControls);
 window.addEventListener('orientationchange', syncTouchControls);
 if (window.visualViewport) {
