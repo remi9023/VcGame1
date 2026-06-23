@@ -220,6 +220,67 @@ canvas {
   pointer-events: none;
 }
 
+.ingame-controls {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 5;
+  display: none;
+  align-items: center;
+  gap: 8px;
+  max-width: calc(100% - 24px);
+  padding: 7px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 16px;
+  background: rgba(4, 6, 17, 0.66);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.25);
+  backdrop-filter: blur(10px);
+  pointer-events: auto;
+  touch-action: manipulation;
+}
+
+body.is-in-game .ingame-controls {
+  display: flex;
+}
+
+.icon-control {
+  min-width: 68px;
+  height: 34px;
+  padding: 0 11px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  box-shadow: none;
+  font-size: 11px;
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+
+.icon-control.is-off {
+  color: #9da9c9;
+}
+
+.volume-control {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 34px;
+  min-width: 138px;
+  padding: 0 9px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #dce5ff;
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.volume-control input {
+  width: 82px;
+  min-width: 0;
+  accent-color: var(--cyan);
+}
+
 .sound-indicator,
 .mode-indicator {
   padding: 6px 9px;
@@ -607,6 +668,45 @@ body.touch-controls .mobile-controls {
 
   .hud {
     grid-template-columns: repeat(2, 1fr);
+  }
+
+  .top-badges {
+    top: 46px;
+    right: 8px;
+    gap: 5px;
+  }
+
+  .sound-indicator,
+  .mode-indicator {
+    padding: 5px 7px;
+    font-size: 9px;
+  }
+
+  .ingame-controls {
+    top: 8px;
+    left: 8px;
+    gap: 6px;
+    padding: 6px;
+    max-width: calc(100% - 16px);
+    flex-wrap: wrap;
+  }
+
+  .icon-control {
+    min-width: 56px;
+    height: 30px;
+    padding: 0 8px;
+    font-size: 10px;
+  }
+
+  .volume-control {
+    flex: 1 1 116px;
+    min-width: 116px;
+    height: 30px;
+    padding: 0 8px;
+  }
+
+  .volume-control input {
+    width: 100%;
   }
 
   .hud-item {

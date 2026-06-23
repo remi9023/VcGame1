@@ -14,6 +14,9 @@ const panelTitle = document.getElementById('panelTitle');
 const panelText = document.getElementById('panelText');
 const startButton = document.getElementById('startButton');
 const muteButton = document.getElementById('muteButton');
+const pauseButton = document.getElementById('pauseButton');
+const ingameMuteButton = document.getElementById('ingameMuteButton');
+const volumeSlider = document.getElementById('volumeSlider');
 const finishRunButton = document.getElementById('finishRunButton');
 
 const rankForm = document.getElementById('rankForm');
@@ -172,6 +175,7 @@ function preventPageZoomTouch(event) {
 let audioContext = null;
 let masterGain = null;
 let isMuted = false;
+let soundVolume = 0.36;
 let bgmAudio = null;
 let shotSoundCooldown = 0;
 let grazeSoundCooldown = 0;
@@ -185,7 +189,7 @@ function initAudio() {
     bgmAudio = bgmAudioElement || new Audio(BGM_PATH);
     bgmAudio.src = bgmAudio.src || new URL(BGM_PATH, document.baseURI).href;
     bgmAudio.loop = true;
-    bgmAudio.volume = 0.36;
+    bgmAudio.volume = soundVolume;
     bgmAudio.preload = 'auto';
   }
 
@@ -194,7 +198,7 @@ function initAudio() {
   const AudioContext = window.AudioContext || window.webkitAudioContext;
   audioContext = new AudioContext();
   masterGain = audioContext.createGain();
-  masterGain.gain.value = isMuted ? 0 : 0.36;
+  masterGain.gain.value = isMuted ? 0 : soundVolume;
   masterGain.connect(audioContext.destination);
 }
 
@@ -317,17 +321,32 @@ function stopBgm() {
   bgmAudio.currentTime = 0;
 }
 
+function pauseBgm() {
+  if (!bgmAudio) return;
+
+  bgmAudio.pause();
+}
+
 function updateSoundUi() {
   soundIndicator.textContent = isMuted ? 'SOUND OFF' : 'SOUND ON';
   muteButton.textContent = isMuted ? '사운드 켜기' : '사운드 끄기';
+  if (ingameMuteButton) {
+    ingameMuteButton.textContent = isMuted ? 'Sound Off' : 'Sound On';
+    ingameMuteButton.setAttribute('aria-label', isMuted ? '사운드 켜기' : '사운드 끄기');
+    ingameMuteButton.classList.toggle('is-off', isMuted);
+  }
+  if (volumeSlider) {
+    volumeSlider.value = Math.round(soundVolume * 100).toString();
+    volumeSlider.setAttribute('aria-valuetext', `${Math.round(soundVolume * 100)}%`);
+  }
 
   if (masterGain) {
-    masterGain.gain.value = isMuted ? 0 : 0.36;
+    masterGain.gain.value = isMuted ? 0 : soundVolume;
   }
 
   if (bgmAudio) {
     bgmAudio.muted = isMuted;
-    bgmAudio.volume = isMuted ? 0 : 0.36;
+    bgmAudio.volume = isMuted ? 0 : soundVolume;
   }
 
   if (isMuted) {
@@ -341,6 +360,15 @@ function toggleMute() {
   initAudio();
   resumeAudio();
   isMuted = !isMuted;
+  if (!isMuted && soundVolume === 0) {
+    soundVolume = 0.36;
+  }
+  updateSoundUi();
+}
+
+function setSoundVolume(value) {
+  soundVolume = clamp(Number(value) / 100, 0, 1);
+  isMuted = soundVolume === 0;
   updateSoundUi();
 }
 
@@ -392,9 +420,11 @@ function resetGame() {
   rankRetryButton.classList.add('hidden');
   startButton.classList.remove('hidden');
   finishRunButton.disabled = true;
+  document.body.classList.remove('is-in-game');
 
   updateStageUi();
   updateHud();
+  updatePauseUi();
 }
 
 function startGame() {
@@ -403,20 +433,77 @@ function startGame() {
   resetGame();
   gameState = 'playing';
   setPageZoomLock(true);
+  document.body.classList.add('is-in-game');
   overlay.classList.remove('active');
   finishRunButton.disabled = false;
   startButton.textContent = '다시 시작';
+  updatePauseUi();
   playStartSound();
   startBgm();
   cancelAnimationFrame(animationId);
   animationId = requestAnimationFrame(gameLoop);
 }
 
-function finishGame(resultType) {
+function pauseGame() {
   if (gameState !== 'playing') return;
+
+  gameState = 'paused';
+  cancelAnimationFrame(animationId);
+  resetKeyboardInput();
+  resetMobileButtonInput();
+  pauseBgm();
+
+  panelKicker.textContent = 'PAUSED';
+  panelTitle.textContent = '일시정지';
+  panelText.textContent = '게임이 잠시 멈췄습니다. 계속하기를 누르면 현재 위치에서 이어집니다.';
+  rankForm.classList.add('hidden');
+  rankRetryButton.classList.add('hidden');
+  startButton.classList.remove('hidden');
+  startButton.textContent = '계속하기';
+  overlay.classList.add('active');
+  updatePauseUi();
+}
+
+function resumeGame() {
+  if (gameState !== 'paused') return;
+
+  gameState = 'playing';
+  setPageZoomLock(true);
+  document.body.classList.add('is-in-game');
+  overlay.classList.remove('active');
+  finishRunButton.disabled = false;
+  startButton.textContent = '다시 시작';
+  lastTime = 0;
+  resumeAudio();
+  if (!isMuted) startBgm();
+  updatePauseUi();
+  cancelAnimationFrame(animationId);
+  animationId = requestAnimationFrame(gameLoop);
+}
+
+function togglePause() {
+  if (gameState === 'playing') {
+    pauseGame();
+  } else if (gameState === 'paused') {
+    resumeGame();
+  }
+}
+
+function updatePauseUi() {
+  if (!pauseButton) return;
+
+  const isPaused = gameState === 'paused';
+  pauseButton.textContent = isPaused ? 'Resume' : 'Pause';
+  pauseButton.setAttribute('aria-label', isPaused ? '계속하기' : '일시정지');
+  pauseButton.disabled = gameState !== 'playing' && gameState !== 'paused';
+}
+
+function finishGame(resultType) {
+  if (gameState !== 'playing' && gameState !== 'paused') return;
 
   gameState = 'end';
   setPageZoomLock(false);
+  document.body.classList.remove('is-in-game');
   resetMobileButtonInput();
   cancelAnimationFrame(animationId);
   stopBgm();
@@ -451,6 +538,7 @@ function finishGame(resultType) {
   startButton.textContent = '다시 시작';
   nicknameInput.focus();
   updateHud();
+  updatePauseUi();
 }
 
 function getStageLabelForLog() {
@@ -637,6 +725,13 @@ function setKeyboardInput(code, isPressed) {
 
 function handleKeyDown(event) {
   if (isTextInputTarget(event.target)) return;
+
+  if ((event.code === 'Escape' || event.code === 'KeyP') && (gameState === 'playing' || gameState === 'paused')) {
+    event.preventDefault();
+    togglePause();
+    return;
+  }
+
   if (setKeyboardInput(event.code, true)) {
     event.preventDefault();
   }
@@ -1278,12 +1373,24 @@ function clearRankings() {
   renderRankings();
 }
 
+function handleStartButtonClick() {
+  if (gameState === 'paused') {
+    resumeGame();
+    return;
+  }
+
+  startGame();
+}
+
 window.addEventListener('keydown', preventPageZoomShortcut, true);
 window.addEventListener('keydown', handleKeyDown);
 window.addEventListener('keyup', handleKeyUp);
 window.addEventListener('blur', resetMobileButtonInput);
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden) resetMobileButtonInput();
+  if (document.hidden) {
+    resetMobileButtonInput();
+    pauseGame();
+  }
 });
 window.addEventListener('wheel', preventPageZoomWheel, { passive: false });
 window.addEventListener('gesturestart', preventPageZoomGesture, { passive: false });
@@ -1303,9 +1410,12 @@ mobileToggles.forEach((toggle) => {
   toggle.addEventListener('pointercancel', handleMobileControlRelease);
   toggle.addEventListener('lostpointercapture', handleMobileControlRelease);
 });
-startButton.addEventListener('click', startGame);
+startButton.addEventListener('click', handleStartButtonClick);
 rankRetryButton.addEventListener('click', startGame);
 muteButton.addEventListener('click', toggleMute);
+pauseButton.addEventListener('click', togglePause);
+ingameMuteButton.addEventListener('click', toggleMute);
+volumeSlider.addEventListener('input', (event) => setSoundVolume(event.target.value));
 finishRunButton.addEventListener('click', () => finishGame('finish'));
 rankForm.addEventListener('submit', handleRankSubmit);
 clearRankingButton.addEventListener('click', clearRankings);

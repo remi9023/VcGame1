@@ -47,6 +47,15 @@
               <span class="mode-indicator" id="modeIndicator">READY</span>
             </div>
 
+            <div class="ingame-controls" id="ingameControls" aria-label="인게임 설정">
+              <button type="button" class="icon-control" id="pauseButton" aria-label="일시정지">Pause</button>
+              <button type="button" class="icon-control" id="ingameMuteButton" aria-label="사운드 끄기">Sound</button>
+              <label class="volume-control" for="volumeSlider">
+                <span>VOL</span>
+                <input type="range" id="volumeSlider" min="0" max="100" value="36" />
+              </label>
+            </div>
+
             <div class="mobile-controls" id="mobileControls" aria-label="Mobile movement controls">
               <div class="mobile-toggle mobile-toggle-vertical" data-axis="vertical" role="slider" aria-label="Vertical movement" aria-valuemin="-1" aria-valuemax="1" aria-valuenow="0">
                 <span class="mobile-toggle-marker mobile-toggle-marker-up"></span>
